@@ -2143,37 +2143,40 @@ body.is-ready .input-card {
      这里把吸收的对象从子卡换成下面的备注框：input-row 不再 flex-grow，
      note-row 接过 flex-grow，textarea 跟着撑满 note-row。
      好处是子卡回归紧凑、备注框变大方便写字，第一屏锁高度依旧。 */
+  /* 输入子卡允许增长、但有上限。
+     允许增长是因为"死板地按内容自然高度"会让 PWA 模式下剩余空间全挤在
+     一段尴尬的空白里（头轻脚轻的反面）。
+     有上限是因为允许无限增长会退回到之前的"细长鬼影"：子卡 170px 宽
+     被拉到 500+px 高时，内部 margin:auto 分出来的缝变成上百像素。
+     这里用 clamp 做 svh 自适应上限：窄屏封顶 280，宽屏可以到 360。 */
   .input-card > .input-row {
-    flex-grow: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: clamp(280px, 42svh, 360px);
   }
 
-  /* 备注框的高度用显式上下限封死，不再通过 flex:1 吃掉 input-card 的剩余空间。
-     之前 flex:1 的方案在 PWA 独立模式下会让 textarea 吞掉额外 80~100px 的"白捡空间"
-     （没浏览器 chrome 占用视口），导致备注框膨胀、整个输入卡头重脚轻。
-     改成 min+max 显式封顶后，多余的垂直空间通过保存按钮的 margin-top: auto
-     转化成"备注框和保存按钮之间的气孔"，比例稳定。 */
+  /* 备注框用 svh 自适应上限，PWA 模式下可以略大一点但不至于像之前 flex:1 那样吞掉
+     一切。note-row 自己按内容自然高度，不 flex-grow，让 input-row 去抢主要空间。 */
   .note-row textarea {
     min-height: clamp(80px, 12vh, 120px);
-    max-height: 200px;
+    max-height: clamp(180px, 32svh, 260px);
   }
 
-  /* 把保存按钮推到输入卡底部，多余空间变成上方气孔而不是灌给某个子元素 */
+  /* 保存按钮推到输入卡底部。任何没被 input-row / textarea 吸收的"真正多余"空间
+     会变成 save-row 上方的气孔，而不是堆在 note-row 下面的尴尬沉默段。 */
   .input-card > .save-row {
     margin-top: auto;
   }
 
-  /* 子卡内不再有剩余空间可分配，margin: auto 会塌到 0，
-     label 和 big-number 会贴在一起。这里给 big-number 一个
-     固定 top margin 维持透气感；stepper-row 的 bottom auto 同样
-     失效，子卡 padding 自己兜住底部即可。 */
+  /* 子卡现在允许在 280~360 的范围内增长，内部用 margin: auto 把剩余空间
+     均分到"标题和数字之间"+"按钮和底部之间"两个气孔。子卡越高气孔越大、
+     但由于上限 360 封死，气孔不会超过 ~75px，不会回到"细长鬼影"的状态。
+     ↑XX 那个 marker label 仍然需要 bar-track 留一段 margin-bottom 给它。 */
   .input-sub > .big-number {
-    margin-top: 14px;
+    margin-top: auto;
     margin-bottom: 0;
   }
 
-  /* 进度条下方需要留够空间给 ↑XX 那个 absolute 定位的小标签，
-     之前为了配合 margin: auto 把这里强制设成 0 了，结果手机上子卡变紧凑后
-     标签会戳到按钮上。这里恢复一个足够的下边距让标签安心待在进度条和按钮之间。 */
   .input-sub > .bar-track {
     margin-top: 10px;
     margin-bottom: clamp(20px, 2.6vh, 26px);
@@ -2181,7 +2184,7 @@ body.is-ready .input-card {
 
   .input-sub > .stepper-row {
     margin-top: 12px;
-    margin-bottom: 0;
+    margin-bottom: auto;
   }
 
   .input-sub-label {
