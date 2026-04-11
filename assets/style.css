@@ -2147,16 +2147,19 @@ body.is-ready .input-card {
     flex-grow: 0;
   }
 
-  .input-card > .note-row {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
+  /* 备注框的高度用显式上下限封死，不再通过 flex:1 吃掉 input-card 的剩余空间。
+     之前 flex:1 的方案在 PWA 独立模式下会让 textarea 吞掉额外 80~100px 的"白捡空间"
+     （没浏览器 chrome 占用视口），导致备注框膨胀、整个输入卡头重脚轻。
+     改成 min+max 显式封顶后，多余的垂直空间通过保存按钮的 margin-top: auto
+     转化成"备注框和保存按钮之间的气孔"，比例稳定。 */
+  .note-row textarea {
+    min-height: clamp(80px, 12vh, 120px);
+    max-height: 200px;
   }
 
-  .note-row textarea {
-    flex: 1;
-    min-height: clamp(80px, 12vh, 120px);
+  /* 把保存按钮推到输入卡底部，多余空间变成上方气孔而不是灌给某个子元素 */
+  .input-card > .save-row {
+    margin-top: auto;
   }
 
   /* 子卡内不再有剩余空间可分配，margin: auto 会塌到 0，

@@ -382,6 +382,43 @@ function resetDraft() {
   state.isNewWeek = !lastInWeek;
 }
 
+// 当时间流逝导致 5h 窗口切换、或 weekly 周期刚刚重置时，
+// 输入卡里的"当前窗口"标签和"上次值"可能会变得过时。
+// 这个函数在用户"没有正在编辑"的前提下，用当前时间重新计算 draft 状态，
+// 只在实际有变化时才重绘输入卡——避免无意义的重绘和动画闪烁。
+// 调用时机：每分钟的 setInterval + 页面从后台切回前台时（visibilitychange）。
+function maybeRefreshDraft() {
+  // 判断"用户没有正在编辑"：草稿值仍然等于上次保存的值
+  // 只要任一项被用户动过（点过 +/- 按钮），就完全不碰，保护进行中的操作
+  const untouched =
+    state.draft5h === state.draftPrev5h &&
+    state.draftWeekly === state.draftPrevWeekly;
+  if (!untouched) return;
+
+  // 快照当前 draft 相关字段，准备做前后对比
+  const before = {
+    windowId: state.draftWindowId,
+    prev5h: state.draftPrev5h,
+    prevWeekly: state.draftPrevWeekly,
+    isNewWindow: state.isNewWindow,
+    isNewWeek: state.isNewWeek,
+  };
+
+  resetDraft();
+
+  // 如果 resetDraft 后任何一个关键字段变了，说明时间推进产生了"可见差异"，
+  // 触发输入卡重绘，让窗口标签、预填值、🌱 新一周等都跟上当前时间
+  const changed =
+    before.windowId !== state.draftWindowId ||
+    before.prev5h !== state.draftPrev5h ||
+    before.prevWeekly !== state.draftPrevWeekly ||
+    before.isNewWindow !== state.isNewWindow ||
+    before.isNewWeek !== state.isNewWeek;
+  if (changed) {
+    renderInputCard();
+  }
+}
+
 // 添加一条新记录
 function addRecord(fiveH, weekly, noteText) {
   const ts = Date.now();
@@ -1683,6 +1720,17 @@ async function syncPull(silent) {
     state.notes = merged.notes || {};
     state.settings = { ...DEFAULT_SETTINGS, ...(merged.settings || {}) };
 
+    // 云端数据合并进来后，输入卡的 draft 状态（上次值、当前窗口 ID 等）
+    // 是基于"旧 records"算的，已经过时了。这里在"用户没有正在编辑"的
+    // 前提下重算 draft，让调用方随后的 renderAll() 能看到最新的输入卡状态。
+    // 只改 state、不调 renderInputCard——渲染交给调用方的 renderAll() 一次到位。
+    const draftUntouched =
+      state.draft5h === state.draftPrev5h &&
+      state.draftWeekly === state.draftPrevWeekly;
+    if (draftUntouched) {
+      resetDraft();
+    }
+
     saveData();
     saveSyncConfig({ ...c, lastSyncedAt: Date.now() });
 
@@ -2498,11 +2546,23 @@ function init() {
   // 这样淡入开始时用户看到的就已经是最终样子，不会有"占位 → 真值"的切换。
   revealPage();
 
-  // 每分钟更新一次倒计时
+  // 每分钟更新一次倒计时 + 状态卡 + 输入卡（如果输入卡的草稿状态过时了的话）
   setInterval(() => {
     renderTopbar();
     renderStatusCards();
+    maybeRefreshDraft();
   }, 60 * 1000);
+
+  // 从后台切回前台（比如用户把 PWA 切到后台刷别的，再切回来）时立刻同步一次，
+  // 避免等最多 60 秒才赶上时间推进。document.visibilityState === 'visible'
+  // 意味着用户正在看这个页面，这时候做一次"赶上进度"的更新是合理的。
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      renderTopbar();
+      renderStatusCards();
+      maybeRefreshDraft();
+    }
+  });
 
   // 监听系统主题变化（仅当用户没有手动设置过偏好时跟随）
   if (window.matchMedia) {
