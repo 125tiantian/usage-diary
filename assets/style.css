@@ -2075,40 +2075,43 @@ body.is-ready .input-card {
   }
 
   /* —— 状态卡（保持双列，每张卡约 160~200px 宽）——
-     双列下宽度受限，上下方向也必须同步压缩，
-     否则会变成"立起来的长方形"看着不舒服 */
+     双列下宽度受限，上下方向也必须同步压缩，否则会变成"立起来的长方形"。
+     但 PWA 模式下视口更大、有多余高度可以吸收——所以 padding 和字号
+     都改成 vh 自适应的 clamp，长屏 PWA 下卡片会稍微变大变舒展，
+     从根源上吃掉输入卡下方那段尴尬空白。 */
   .status-row {
     gap: 10px;
   }
 
   .status-card {
-    padding: 10px 12px;
+    padding: clamp(12px, 2vh, 20px) clamp(14px, 3vw, 18px);
   }
 
   .status-card-label {
-    font-size: 11px;
+    font-size: clamp(11px, 1.4vh, 13px);
   }
 
   .status-card-value {
-    /* 桌面 clamp(46px, 6vh, 64px) → 手机改成跟视口宽度走 */
-    font-size: clamp(28px, 8.5vw, 40px);
-    margin-top: 2px;
+    /* 桌面 clamp(46px, 6vh, 64px) → 手机原本只跟视口宽度走
+       现在同时跟视口高度走一个下限，PWA 长屏可以适度放大 */
+    font-size: clamp(30px, 10vw + 0.2vh, 46px);
+    margin-top: clamp(2px, 0.5vh, 6px);
     line-height: 1;
   }
 
   .status-card-pct {
-    font-size: 15px;
+    font-size: clamp(15px, 2vh, 18px);
     margin-left: 2px;
   }
 
   .ring-bar {
-    height: 5px;
-    margin-top: 6px;
+    height: clamp(6px, 0.9vh, 9px);
+    margin-top: clamp(7px, 1.2vh, 12px);
   }
 
   .status-card-meta {
-    margin-top: 6px;
-    font-size: 10.5px;
+    margin-top: clamp(7px, 1.2vh, 12px);
+    font-size: clamp(10.5px, 1.3vh, 12px);
     gap: 6px;
     flex-wrap: nowrap;
     white-space: nowrap;
@@ -2143,23 +2146,22 @@ body.is-ready .input-card {
      这里把吸收的对象从子卡换成下面的备注框：input-row 不再 flex-grow，
      note-row 接过 flex-grow，textarea 跟着撑满 note-row。
      好处是子卡回归紧凑、备注框变大方便写字，第一屏锁高度依旧。 */
-  /* 输入子卡允许增长、但有上限。
-     允许增长是因为"死板地按内容自然高度"会让 PWA 模式下剩余空间全挤在
-     一段尴尬的空白里（头轻脚轻的反面）。
-     有上限是因为允许无限增长会退回到之前的"细长鬼影"：子卡 170px 宽
-     被拉到 500+px 高时，内部 margin:auto 分出来的缝变成上百像素。
-     这里用 clamp 做 svh 自适应上限：窄屏封顶 280，宽屏可以到 360。 */
+  /* 输入子卡：尽量接近"图 5 紧凑状态"，但允许略微增长。
+     目标是子卡在 240~280 这个"微略大于内容自然高度"的范围内，
+     既不会像 336 那样明显太高，也不会显得贴到元素上不透气。
+     svh 系数 28% 意味着 PWA 模式下约 224（会被 min 260 顶起来，所以其实等于 240），
+     比之前的"336"少 70~100px，把这些高度让给状态卡和备注框去吸收。 */
   .input-card > .input-row {
     flex: 1 1 auto;
     min-height: 0;
-    max-height: clamp(280px, 42svh, 360px);
+    max-height: clamp(240px, 28svh, 280px);
   }
 
-  /* 备注框用 svh 自适应上限，PWA 模式下可以略大一点但不至于像之前 flex:1 那样吞掉
-     一切。note-row 自己按内容自然高度，不 flex-grow，让 input-row 去抢主要空间。 */
+  /* 备注框稍微放宽上限：最低仍然 200（保持图 5 的紧凑感），PWA 模式下可以到 230 左右，
+     不会再像 flex:1 那样吞噬一切、也不会被钉在 200 死板。 */
   .note-row textarea {
     min-height: clamp(80px, 12vh, 120px);
-    max-height: clamp(180px, 32svh, 260px);
+    max-height: clamp(200px, 28svh, 240px);
   }
 
   /* 保存按钮推到输入卡底部。任何没被 input-row / textarea 吸收的"真正多余"空间
