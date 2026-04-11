@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- 背景：深咖啡棕 -->
+  <rect width="512" height="512" fill="#3A2A20"/>
+
+  <!-- 咖啡杯杯身：微微收口的梯形 -->
+  <path d="M 140 200
+           L 320 200
+           L 304 360
+           Q 304 386 278 386
+           L 182 386
+           Q 156 386 156 360 Z"
+        fill="#F0E6D5"/>
+
+  <!-- 杯口里的咖啡面：椭圆，色调是暖棕 -->
+  <ellipse cx="230" cy="200" rx="90" ry="14" fill="#8B6F47"/>
+
+  <!-- 杯子右侧把手：C 形曲线 -->
+  <path d="M 320 232
+           C 376 232 376 308 320 308"
+        fill="none"
+        stroke="#F0E6D5"
+        stroke-width="22"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+
+  <!-- 三缕热气：柔和的波浪线，从杯口向上升起 -->
+  <g stroke="#F0E6D5" stroke-width="14" stroke-linecap="round" fill="none">
+    <path d="M 190 164 Q 200 138 190 112 Q 180 86 190 70" opacity="0.55"/>
+    <path d="M 230 164 Q 240 138 230 112 Q 220 86 230 70" opacity="0.85"/>
+    <path d="M 270 164 Q 280 138 270 112 Q 260 86 270 70" opacity="0.55"/>
+  </g>
+</svg>

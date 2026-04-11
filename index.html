@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>额度小日记</title>
+
+  <!-- Favicon：治愈风的小咖啡杯（奶油圆背景 + 蜜桃橘杯身 + 一根蒸汽），
+       用内嵌 SVG data URI，所以不需要额外的图标文件 -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='30' fill='%23FCEFE3'/><path d='M28 20 q 6 -5 0 -10 q -6 -5 0 -10' fill='none' stroke='%23E88B5A' stroke-width='3.5' stroke-linecap='round' opacity='0.55'/><path d='M14 26 h30 v13 a9 9 0 0 1 -9 9 h-12 a9 9 0 0 1 -9 -9 z' fill='%23F5A678'/><path d='M44 30 q 8 0 8 7 q 0 7 -8 7' fill='none' stroke='%23F5A678' stroke-width='4' stroke-linecap='round'/><ellipse cx='29' cy='26' rx='15' ry='2.5' fill='%23E88B5A'/></svg>">
+
+  <!-- ================= PWA 配置 ================= -->
+  <!-- 声明这是一个 PWA 应用，加载 manifest 配置文件 -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- 手机顶部状态栏颜色：根据浅色/深色模式自动切换 -->
+  <meta name="theme-color" content="#FBF8F3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#18140F" media="(prefers-color-scheme: dark)">
+
+  <!-- iOS Safari 专用：让"添加到主屏幕"后以 App 方式启动 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="额度小日记">
+
+  <!-- iOS 主屏图标（iOS 不读 manifest.json 里的图标，要单独声明）-->
+  <link rel="apple-touch-icon" href="assets/icon.svg">
+
+  <!-- 在 CSS 加载之前就把主题设好，防 FOUC（一闪的浅色然后切到深色）-->
+  <script>
+    (function() {
+      try {
+        var saved = localStorage.getItem('limit-diary-theme');
+        var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+      } catch (e) {}
+    })();
+  </script>
+
+  <!-- 防"抽抽"：页面默认透明，等 JS 把所有数据/图表都填进去之后才淡入。
+       html 提前给一个奶油色 / 深色背景，避免淡入前的白屏。
+       这一段必须内联在 head 里，赶在 style.css 加载之前生效 -->
+  <style>
+    html { background: #FBF8F3; }
+    html[data-theme="dark"] { background: #18140F; }
+    body { opacity: 0; }
+    body.is-ready { opacity: 1; }
+  </style>
+
+  <!-- 字体：Quicksand 圆润数字 + Caveat 手写感备注 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&family=Nunito:wght@400;600;700&family=Caveat:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- Chart.js (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+  <div class="page">
+
+    <!-- ========== 第一屏（hero） ==========
+         hero 容器把顶栏 + 状态卡 + 输入卡打包成一组，
+         min-height: 100vh，让这一组刚好填满视口高度。
+         无论缩放多少都不会让第二屏的内容偷跑进第一屏。 -->
+    <div class="hero">
+
+    <!-- ========== 1. 顶栏 ========== -->
+    <header class="topbar">
+      <div class="topbar-title">
+        <span class="topbar-icon">☕</span>
+        <span class="topbar-name">额度小日记</span>
+      </div>
+      <div class="topbar-meta">
+        <span id="today-date">—</span>
+        <span class="topbar-divider">·</span>
+        <span id="weekly-reset-info">—</span>
+        <button class="icon-btn sync-icon-btn" id="sync-btn" hidden>
+          <span class="sync-icon">☁️</span>
+          <span class="sync-dot"></span>
+        </button>
+        <button class="icon-btn" id="theme-btn">🌙</button>
+        <button class="icon-btn" id="settings-btn">⚙️</button>
+      </div>
+    </header>
+
+    <!-- ========== 2. 状态卡 × 2 ========== -->
+    <section class="status-row">
+      <div class="status-card status-card--5h" id="status-5h">
+        <div class="status-card-label">5h 窗口</div>
+        <div class="status-card-value">
+          <span id="status-5h-num">—</span><span class="status-card-pct">%</span>
+        </div>
+        <div class="ring-bar">
+          <div class="ring-bar-fill" id="status-5h-bar"></div>
+        </div>
+        <div class="status-card-meta">
+          <div id="status-5h-range">尚未开始</div>
+          <div id="status-5h-countdown">—</div>
+        </div>
+      </div>
+
+      <div class="status-card status-card--weekly" id="status-weekly">
+        <div class="status-card-label">Weekly</div>
+        <div class="status-card-value">
+          <span id="status-weekly-num">—</span><span class="status-card-pct">%</span>
+        </div>
+        <div class="ring-bar">
+          <div class="ring-bar-fill" id="status-weekly-bar"></div>
+        </div>
+        <div class="status-card-meta">
+          <div id="status-weekly-reset">—</div>
+          <div id="status-weekly-ideal">—</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 3. 输入卡 ========== -->
+    <section class="card input-card">
+      <div class="card-title">
+        <span class="card-title-icon">✏️</span>
+        <span>记一下</span>
+        <span class="window-tag" id="window-tag"></span>
+      </div>
+
+      <div class="empty-hint" id="empty-hint" hidden>
+        👋 第一次用？看一眼 Claude 显示的两个百分比数字，用下面的 +/− 按钮调到一样，然后点 <b>记一下 ✨</b>~
+      </div>
+
+      <div class="input-row">
+
+        <!-- 5h 输入子卡 -->
+        <div class="input-sub input-sub--5h">
+          <div class="input-sub-label">5h 窗口</div>
+          <div class="big-number">
+            <span id="input-5h-num">0</span><span class="big-number-pct">%</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill bar-fill--prev" id="input-5h-prev-fill"></div>
+            <div class="bar-fill bar-fill--new" id="input-5h-new-fill"></div>
+            <div class="bar-marker bar-marker--prev" id="input-5h-prev-marker">
+              <span class="marker-label" id="input-5h-prev-label">↑0</span>
+            </div>
+          </div>
+          <div class="stepper-row">
+            <button class="step-btn step-btn--minus" data-target="5h" data-step="-10">−10</button>
+            <button class="step-btn step-btn--minus" data-target="5h" data-step="-5">−5</button>
+            <button class="step-btn step-btn--minus" data-target="5h" data-step="-1">−1</button>
+            <span class="stepper-gap"></span>
+            <button class="step-btn step-btn--plus" data-target="5h" data-step="1">+1</button>
+            <button class="step-btn step-btn--plus" data-target="5h" data-step="5">+5</button>
+            <button class="step-btn step-btn--plus" data-target="5h" data-step="10">+10</button>
+          </div>
+        </div>
+
+        <!-- Weekly 输入子卡 -->
+        <div class="input-sub input-sub--weekly">
+          <div class="input-sub-label">Weekly</div>
+          <div class="big-number">
+            <span id="input-weekly-num">0</span><span class="big-number-pct">%</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill bar-fill--prev" id="input-weekly-prev-fill"></div>
+            <div class="bar-fill bar-fill--new" id="input-weekly-new-fill"></div>
+            <div class="bar-marker bar-marker--prev" id="input-weekly-prev-marker">
+              <span class="marker-label" id="input-weekly-prev-label">↑0</span>
+            </div>
+          </div>
+          <div class="stepper-row">
+            <button class="step-btn step-btn--minus" data-target="weekly" data-step="-10">−10</button>
+            <button class="step-btn step-btn--minus" data-target="weekly" data-step="-5">−5</button>
+            <button class="step-btn step-btn--minus" data-target="weekly" data-step="-1">−1</button>
+            <span class="stepper-gap"></span>
+            <button class="step-btn step-btn--plus" data-target="weekly" data-step="1">+1</button>
+            <button class="step-btn step-btn--plus" data-target="weekly" data-step="5">+5</button>
+            <button class="step-btn step-btn--plus" data-target="weekly" data-step="10">+10</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 备注框（挂到这一次的记录上，保存后清空）-->
+      <div class="note-row">
+        <label for="window-note">📝 这一刻在干嘛</label>
+        <textarea id="window-note" placeholder="随便写点什么……（写了的话，这条备注会被钉在这一笔记录上）" rows="2"></textarea>
+      </div>
+
+      <div class="save-row">
+        <button class="save-btn" id="save-btn">记一下 ✨</button>
+      </div>
+    </section>
+
+    </div><!-- /.hero 第一屏结束 -->
+
+    <!-- ========== 4. 汇率卡 + 周曲线 ========== -->
+    <section class="middle-row scroll-reveal">
+
+      <!-- 汇率卡 -->
+      <div class="card rate-card" id="rate-card">
+        <div class="card-title">
+          <span class="card-title-icon">💱</span>
+          <span>当前汇率</span>
+        </div>
+
+        <div class="rate-big" id="rate-big">—</div>
+        <div class="rate-explain" id="rate-explain">等数据中…</div>
+
+        <div class="rate-divider"></div>
+
+        <div class="rate-stats">
+          <div class="rate-stat">
+            <span class="rate-stat-label">📊 历史平均</span>
+            <span class="rate-stat-value" id="rate-overall">—</span>
+          </div>
+          <div class="rate-stat">
+            <span class="rate-stat-label">🔥 高峰时段</span>
+            <span class="rate-stat-value" id="rate-peak">—</span>
+          </div>
+          <div class="rate-stat">
+            <span class="rate-stat-label">🌿 非高峰</span>
+            <span class="rate-stat-value" id="rate-offpeak">—</span>
+          </div>
+        </div>
+
+        <div class="rate-trend" id="rate-trend">—</div>
+
+        <div class="rate-chart-wrap" id="rate-chart-wrap">
+          <canvas id="rate-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- 周曲线卡 -->
+      <div class="card weekly-card">
+        <div class="card-title">
+          <span class="card-title-icon">📈</span>
+          <span>Weekly 节奏</span>
+          <span class="weekly-nav">
+            <button class="nav-btn" id="prev-week-btn">◀</button>
+            <span class="weekly-nav-title" id="weekly-nav-title">本周</span>
+            <button class="nav-btn" id="next-week-btn">▶</button>
+          </span>
+        </div>
+        <div class="weekly-chart-wrap">
+          <canvas id="weekly-chart"></canvas>
+        </div>
+        <div class="weekly-prediction" id="weekly-prediction">—</div>
+      </div>
+
+    </section>
+
+    <!-- ========== 5. 5h 窗口历史 ========== -->
+    <section class="card history-card scroll-reveal">
+      <div class="card-title">
+        <span class="card-title-icon">🕒</span>
+        <span>5h 窗口历史</span>
+        <span class="card-title-meta" id="history-count">—</span>
+      </div>
+
+      <!-- 选中窗口的详情 -->
+      <div class="history-detail">
+        <div class="history-nav">
+          <button class="nav-btn" id="prev-window-btn">◀</button>
+          <span class="history-title" id="history-title">—</span>
+          <button class="nav-btn" id="next-window-btn">▶</button>
+        </div>
+
+        <div class="window-chart-wrap">
+          <canvas id="window-chart"></canvas>
+        </div>
+
+        <div class="window-summary" id="window-summary">—</div>
+
+        <!-- 备注区：默认只显示最新一条；点展开看这个窗口里所有写过备注的记录 -->
+        <div class="notes-area" id="notes-area">
+          <div class="notes-latest" id="notes-latest">—</div>
+          <button class="notes-expand-btn" id="notes-expand-btn" hidden>看这个窗口的所有备注 ⌄</button>
+          <div class="notes-list" id="notes-list" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========== 6. 底部 ========== -->
+    <footer class="bottom-bar">
+      <span class="bottom-text">这就是全部啦 (｡•̀ᴗ-)✧</span>
+    </footer>
+
+  </div>
+
+  <!-- ========== 设置面板（弹层）========== -->
+  <div class="modal-mask" id="settings-modal" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <span>⚙️ 设置</span>
+        <button class="icon-btn" id="settings-close">✕</button>
+      </div>
+
+      <div class="modal-body">
+
+        <!-- ==================== 第一大块：时间相关 ==================== -->
+        <div class="settings-section">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">⏰ 时间相关</h3>
+            <p class="settings-section-sub">App 怎么理解一周、5h 窗口和高峰时段</p>
+          </div>
+
+          <div class="settings-group">
+            <h4 class="settings-group-title">Weekly 重置</h4>
+            <div class="settings-row">
+              <label>每周
+                <select id="setting-weekly-day">
+                  <option value="0">日</option>
+                  <option value="1">一</option>
+                  <option value="2">二</option>
+                  <option value="3">三</option>
+                  <option value="4">四</option>
+                  <option value="5">五</option>
+                  <option value="6" selected>六</option>
+                </select>
+              </label>
+              <label>
+                <input type="number" id="setting-weekly-hour" min="0" max="23" value="18">
+                点重置
+              </label>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <h4 class="settings-group-title">5h 窗口校准</h4>
+            <div class="calibrate-info" id="calibrate-info">—</div>
+            <div class="settings-row">
+              <label>
+                把起点挪到
+                <input type="number" id="setting-calibrate-hour" min="0" max="23" disabled>
+                点
+              </label>
+              <button class="text-btn" id="calibrate-btn" disabled>校准</button>
+            </div>
+            <div class="settings-hint">
+              比如 Claude 的 5h 窗口其实 5 点就开始了，但你 6 点才来记录——可以把起点手动挪回去。挪动后窗口仍然是 5 小时长，只是起点变了。
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <h4 class="settings-group-title">高峰时段（北京时间）</h4>
+            <div class="settings-row">
+              <label>
+                <input type="number" id="setting-peak-start" min="0" max="23" value="21">
+                点 ~
+              </label>
+              <label>
+                <input type="number" id="setting-peak-end" min="0" max="23" value="3">
+                点
+              </label>
+            </div>
+            <div class="settings-row">
+              <label>
+                <input type="checkbox" id="setting-peak-weekday" checked>
+                仅工作日
+              </label>
+            </div>
+            <div class="settings-hint">默认是 Anthropic 公告里的"工作日 1pm-7pm GMT"换算成北京时间</div>
+          </div>
+        </div>
+
+        <!-- ==================== 第二大块：数据与备份 ==================== -->
+        <div class="settings-section">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">💾 数据与备份</h3>
+            <p class="settings-section-sub">本地导出导入、云端同步、危险操作都在这里</p>
+          </div>
+
+          <!-- ===== 子区 A：本地备份 ===== -->
+          <div class="settings-group">
+            <h4 class="settings-group-title">本地备份</h4>
+            <div class="settings-row settings-btn-row">
+              <button class="text-btn" id="export-btn">📤 导出 JSON 备份</button>
+              <button class="text-btn" id="import-btn">📥 导入 JSON</button>
+              <input type="file" id="import-file" accept=".json" hidden>
+            </div>
+            <div class="settings-hint">建议偶尔导出一份 JSON 存到本地或 U 盘，云同步只是辅助，本地备份最稳。</div>
+          </div>
+
+          <!-- ===== 子区 B：云端同步 ===== -->
+          <div class="settings-group">
+            <h4 class="settings-group-title">云端同步（jsonbin）</h4>
+
+            <!-- 状态条放最顶部，进入这块第一眼就能看到当前状态 -->
+            <div class="sync-status-box" id="sync-status-box">
+              <span class="sync-status-dot"></span>
+              <span class="sync-status-text" id="sync-status-text">未配置</span>
+            </div>
+
+            <div class="sync-hint">
+              用
+              <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a>
+              的免费服务在手机和 PC 之间同步数据。Key 只存在你自己的浏览器里，不会泄露。
+            </div>
+
+            <div class="settings-row sync-field-row">
+              <label class="sync-field-label">Master Key</label>
+              <input type="password" id="sync-master-key" placeholder="从 jsonbin.io 的 API Keys 复制" autocomplete="off" spellcheck="false">
+            </div>
+
+            <div class="settings-row sync-field-row">
+              <label class="sync-field-label">Bin ID</label>
+              <input type="text" id="sync-bin-id" placeholder="留空点'初始化'会自动创建" autocomplete="off" spellcheck="false">
+            </div>
+
+            <!-- 主操作组：日常会用的三个按钮 -->
+            <div class="settings-row settings-btn-row settings-btn-row--primary">
+              <button class="text-btn text-btn--primary" id="sync-init-btn">🪄 初始化云同步</button>
+              <button class="text-btn text-btn--primary" id="sync-pull-btn">⬇️ 立即拉取</button>
+              <button class="text-btn text-btn--primary" id="sync-push-btn">⬆️ 立即推送</button>
+            </div>
+
+            <!-- 次要操作组：跨设备配置传递，视觉权重降低 -->
+            <div class="settings-row settings-btn-row settings-btn-row--secondary">
+              <button class="text-btn text-btn--ghost" id="sync-export-btn">📋 复制同步配置</button>
+              <button class="text-btn text-btn--ghost" id="sync-import-btn">📎 从配置字符串导入</button>
+            </div>
+
+            <!-- 暂停开关 -->
+            <div class="settings-row sync-pause-row">
+              <label class="sync-pause-toggle">
+                <input type="checkbox" id="sync-pause-toggle">
+                <span class="sync-pause-label">⏸ 暂停自动同步（调试用）</span>
+              </label>
+              <div class="sync-pause-hint">开启后不会在刷新和保存时自动同步，但上面的"立即拉取 / 立即推送"按钮仍然可用。</div>
+            </div>
+
+            <div class="settings-hint">
+              第一次用：去 <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a> 注册账号，复制 Master Key 粘到上面点"初始化"。第二个设备用"从配置字符串导入"能一键搞定。
+            </div>
+          </div>
+
+          <!-- ===== 子区 C：危险区 ===== -->
+          <div class="settings-group settings-group--danger">
+            <h4 class="settings-group-title settings-group-title--danger">⚠️ 危险区</h4>
+            <p class="settings-danger-sub">这里的操作不可逆，按之前请确认你已经做好备份。</p>
+            <div class="settings-row settings-btn-row">
+              <button class="text-btn text-btn--danger" id="sync-clear-btn">🚫 解除云同步</button>
+              <button class="text-btn text-btn--danger" id="clear-btn">🗑️ 清空所有数据</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== 第三大块：关于 ==================== -->
+        <div class="settings-section settings-section--about">
+          <div class="settings-section-head">
+            <h3 class="settings-section-title">ℹ️ 关于</h3>
+          </div>
+          <div class="settings-hint">
+            额度小日记 · 一个用来缓解 Claude 额度焦虑的小手账。
+            <br>数据默认存在你的浏览器本地（localStorage），配置云同步后会自动备份到 jsonbin.io。
+          </div>
+        </div>
+
+      </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保存成功的小提示 -->
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="assets/app.js"></script>
+</body>
+</html>

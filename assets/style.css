@@ -1,0 +1,2254 @@
+/* =======================================================
+   额度小日记 · 样式表
+   设计气质：温柔治愈风、奶油色、手账感
+   ======================================================= */
+
+/* ============ 1. 设计变量（CSS Variables） ============ */
+:root {
+  /* —— 浅色模式（默认）—— */
+  --bg-page:        #FBF8F3;   /* 奶油背景 */
+  --bg-card:        #FFFFFF;   /* 卡片白 */
+  --bg-soft:        #F6F1E8;   /* 嵌套子卡的浅色 */
+
+  --text-primary:   #4A3F35;   /* 暖深棕（不用纯黑）*/
+  --text-secondary: #8A7E70;   /* 浅咖啡 */
+  --text-mute:      #B8AC9E;   /* 极浅咖啡 */
+
+  /* 5h 主题：蜜桃橘 */
+  --c-5h:           #F5A678;
+  --c-5h-deep:      #E88B5A;
+  --c-5h-soft:      #FCEFE3;
+  --c-5h-soft-deep: #F8DCC2;
+  --c-5h-grad-end:  #FFF7EE;     /* 状态卡渐变末端 */
+
+  /* Weekly 主题：鼠尾草绿 */
+  --c-weekly:       #95C9A6;
+  --c-weekly-deep:  #6FAE83;
+  --c-weekly-soft:  #E8F2EA;
+  --c-weekly-soft-deep: #C8E2D0;
+  --c-weekly-grad-end: #F4FAF5;
+
+  /* 汇率主题：淡薰衣草 */
+  --c-rate:         #B8A4D4;
+  --c-rate-deep:    #9580BD;
+  --c-rate-soft:    #EFE9F6;
+
+  /* 状态色 */
+  --c-honey:        #F4D58D;   /* 高亮新增段：蜜糖黄 */
+  --c-warn:         #E89C7E;   /* 温柔警示：珊瑚橘 */
+  --c-safe:         #B8D4A8;   /* 温柔安心：抹茶绿 */
+
+  /* 图表用 */
+  --c-ideal:        #C8BFAF;   /* 理想匀速参考线 */
+  --c-predict:      #A7C5E8;   /* 预测延伸线 */
+
+  /* 分割线 / 灰 */
+  --c-divider:      #EEE6D8;
+  --c-track:        #F0E8DA;
+
+  /* 进度条轨道 */
+  --bar-track-bg:   rgba(255, 255, 255, 0.7);
+
+  /* 半透明覆盖（按钮 / 环形条等用得到的"白色玻璃"效果）*/
+  --overlay-soft:   rgba(255, 255, 255, 0.6);
+  --overlay-mid:    rgba(255, 255, 255, 0.7);
+  --overlay-strong: rgba(255, 255, 255, 1);
+
+  /* 反向操作（数值倒退）的高亮颜色 */
+  --c-reverse:      #C7D9E8;
+
+  /* 备注框聚焦时的背景 */
+  --note-focus-bg:  #FAF5EA;
+
+  /* 弹层 / Toast */
+  --modal-mask-bg:  rgba(74, 63, 53, 0.3);
+  --toast-bg:       #4A3F35;
+  --toast-text:     #FFFFFF;
+
+  /* 提示卡渐变 */
+  --hint-grad-start: #FFF8EA;
+  --hint-grad-end:   #FFF3DD;
+
+  /* —— 字体 —— */
+  --font-display:   'Quicksand', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body:      'Nunito', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-hand:      'Caveat', 'Kaiti', 'PingFang SC', cursive;
+
+  /* —— 圆角 / 阴影 / 间距 —— */
+  --radius-card:    20px;
+  --radius-sub:     16px;
+  --radius-btn:     12px;
+  --shadow-soft:    0 4px 16px rgba(180, 150, 110, 0.08);
+  --shadow-hover:   0 8px 24px rgba(180, 150, 110, 0.12);
+
+  /* gap 和 pad 用 clamp 跟视口高度走，矮视口下自动收紧 */
+  --gap-card:       clamp(12px, 1.8vh, 20px);
+  --pad-card:       clamp(18px, 2.6vh, 28px);
+
+  /* 动效缓动 */
+  --ease-soft:      cubic-bezier(0.25, 0.8, 0.25, 1);
+  --ease-bounce:    cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* —— 深色模式（覆盖变量）—— */
+[data-theme="dark"] {
+  --bg-page:        #18140F;   /* 深咖啡棕，像浓缩咖啡的颜色 */
+  --bg-card:        #221C16;   /* 卡片比背景稍亮一点 */
+  --bg-soft:        #2D2620;   /* 嵌套子卡更亮一点 */
+
+  --text-primary:   #F0E6D5;   /* 暖奶油白 */
+  --text-secondary: #A89C89;   /* 中等暖灰 */
+  --text-mute:      #6F6557;   /* 暗暖灰 */
+
+  /* 主题色保持鲜艳但稍亮，让它们在深色背景上更醒目 */
+  --c-5h:           #F5A678;
+  --c-5h-deep:      #FFB890;   /* 深色模式下"deep"反而更亮 */
+  --c-5h-soft:      #3A2A20;   /* 嵌套子卡的深色背景，带点橘色调 */
+  --c-5h-soft-deep: #876245;
+  --c-5h-grad-end:  #2D2018;
+
+  --c-weekly:       #95C9A6;
+  --c-weekly-deep:  #B5DDBE;
+  --c-weekly-soft:  #1E2D24;
+  --c-weekly-soft-deep: #4E8A63;
+  --c-weekly-grad-end: #182218;
+
+  --c-rate:         #B8A4D4;
+  --c-rate-deep:    #D6C0F0;
+  --c-rate-soft:    #2D2535;
+
+  --c-honey:        #F4D58D;
+  --c-warn:         #FFB392;
+  --c-safe:         #B8D4A8;
+
+  --c-ideal:        #5A5045;
+  --c-predict:      #6B85A8;
+
+  --c-divider:      #3A332B;
+  --c-track:        #332D24;
+
+  --bar-track-bg:   rgba(255, 255, 255, 0.06);
+
+  --overlay-soft:   rgba(255, 255, 255, 0.05);
+  --overlay-mid:    rgba(255, 255, 255, 0.08);
+  --overlay-strong: rgba(255, 255, 255, 0.14);
+
+  --c-reverse:      #4A5A6E;
+
+  --note-focus-bg:  #3A332B;
+
+  --modal-mask-bg:  rgba(0, 0, 0, 0.55);
+  --toast-bg:       #F0E6D5;
+  --toast-text:     #18140F;
+
+  --hint-grad-start: #2D2620;
+  --hint-grad-end:   #3A2A20;
+
+  /* 深色模式下的阴影：用更深的黑色阴影 */
+  --shadow-soft:    0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-hover:   0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+/* —— 主题切换时的平滑过渡（仅在切换瞬间启用，避免影响其他动画）—— */
+.theme-transitioning,
+.theme-transitioning *,
+.theme-transitioning *::before,
+.theme-transitioning *::after {
+  transition: background-color 0.3s ease,
+              color 0.3s ease,
+              border-color 0.3s ease,
+              box-shadow 0.3s ease,
+              fill 0.3s ease,
+              stroke 0.3s ease !important;
+}
+
+/* ============ 2. Reset & 基础 ============ */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  /* 关掉 iOS / Android Chromium 默认的"按钮被点一下闪个半透明灰蓝色"。
+     这个高亮是浏览器主动加的"点击反馈"，跟我们自己写的 :active 动画
+     冲突且配色不搭，所以全局设成透明色让它彻底消失。 */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 选中文字高亮：蜂蜜黄背景 + 暖深棕文字，和整体治愈风一致 */
+::selection {
+  background: #F4D58D;
+  color: #4A3F35;
+}
+
+html, body {
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 防抽抽：body 默认透明（在 head 内联样式里设的 opacity:0），
+   JS 把所有内容渲染完后给 body 加 .is-ready，触发淡入 */
+body {
+  transition: opacity 0.45s var(--ease-soft);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+/* 鼠标点击 / 手指触摸触发的 focus 不显示焦点框（手机点完按钮还残留
+   一圈蓝色 outline 的元凶就是这个）。但键盘 Tab 导航时仍然显示，
+   通过 :focus-visible 区分——这是无障碍的基本要求，不能完全去掉。 */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-5h);
+  outline-offset: 2px;
+}
+
+input, textarea, select {
+  font-family: inherit;
+  color: var(--text-primary);
+  border: none;
+  outline: none;
+  background: transparent;
+}
+
+/* ============ 3. 页面容器 ============ */
+.page {
+  max-width: 1100px;
+  margin: 0 auto;
+  /* 顶部 padding 由 hero 自己接管（这样 hero 才能真的占满 100vh） */
+  padding: 0 32px clamp(40px, 5vh, 60px);
+}
+
+/* ============ 3b. Hero 容器（第一屏） ============
+   把顶栏+状态卡+输入卡打包成 100vh 的一组。
+   用 flex 把"状态卡+输入卡"作为一整组推到底部，
+   多出来的视口空间作为"顶栏 vs 状态卡"之间的留白，
+   绝对不会让第二屏的内容偷跑进第一屏。 */
+.hero {
+  /* 第一屏锁高度。先给老浏览器一个 100vh 兜底，
+     再用 100svh 覆盖——svh 是"地址栏最大化时的可见高度"，
+     在 Chrome 手机上能避开 100vh 把页面拉到地址栏背后的经典陷阱，
+     否则多出的那段空间会被输入卡里的子卡吸收，子卡被拉成细长鬼影。 */
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  /* hero 自己接管顶部和底部 padding */
+  padding-top: clamp(14px, 1.8vh, 28px);
+  padding-bottom: clamp(20px, 2.5vh, 32px);
+  margin-bottom: var(--gap-card);
+}
+
+.hero > .topbar {
+  flex-shrink: 0;
+}
+
+/* 状态卡紧贴顶栏下方，正常间距 */
+.hero > .status-row {
+  flex-shrink: 0;
+  margin-bottom: var(--gap-card);
+}
+
+/* 关键：让输入卡撑满 hero 的剩余空间。
+   这样状态卡贴顶、输入卡贴底，中间不会有大空白。
+   多出来的空间被输入卡内部的备注框吃掉（备注框也用 flex-grow），
+   恰好对应"下面不够大 → 备注框可以更大"的诉求。 */
+.hero > .input-card {
+  flex-grow: 1;
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+/* ============ 4. 顶栏 ============ */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px clamp(14px, 2vh, 24px);
+}
+
+.topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.topbar-icon {
+  font-size: 24px;
+}
+
+.topbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.topbar-divider {
+  color: var(--text-mute);
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s var(--ease-soft);
+  position: relative;   /* 给 tooltip 伪元素做定位锚点 */
+}
+
+.icon-btn:hover {
+  background: var(--c-divider);
+}
+
+/* ============ 5. 状态卡 × 2 ============ */
+.status-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--gap-card);
+  margin-bottom: var(--gap-card);
+}
+
+.status-card {
+  border-radius: var(--radius-card);
+  padding: clamp(16px, 2.2vh, 24px) clamp(20px, 2.6vh, 28px);
+  box-shadow: var(--shadow-soft);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow 0.3s var(--ease-soft), transform 0.3s var(--ease-soft);
+}
+
+.status-card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
+}
+
+.status-card--5h {
+  background: linear-gradient(135deg, var(--c-5h-soft) 0%, var(--c-5h-grad-end) 100%);
+}
+
+.status-card--weekly {
+  background: linear-gradient(135deg, var(--c-weekly-soft) 0%, var(--c-weekly-grad-end) 100%);
+}
+
+.status-card-label {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+}
+
+.status-card-value {
+  font-family: var(--font-display);
+  /* 字号跟视口高度走，矮视口下自动缩小 */
+  font-size: clamp(46px, 6vh, 64px);
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 4px;
+  color: var(--text-primary);
+}
+
+.status-card--5h .status-card-value {
+  color: var(--c-5h-deep);
+}
+
+.status-card--weekly .status-card-value {
+  color: var(--c-weekly-deep);
+}
+
+.status-card-pct {
+  font-size: 28px;
+  font-weight: 600;
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
+.ring-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--overlay-soft);
+  border-radius: 10px;
+  margin-top: 14px;
+  overflow: hidden;
+}
+
+.ring-bar-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 10px;
+  transition: width 1.6s var(--ease-soft);
+}
+
+/* 入场动画专用：页面淡入完成 + 一点点停顿之前，强制把进度条按住在 0%。
+   一旦 body 拿到 .is-bars-armed，行内 style 设的目标宽度才会接管，
+   连同 transition 一起从 0 涨到目标值——这样动画和"看见"同步，
+   而不是和 body 淡入挤在一起被吃掉大半。 */
+body:not(.is-bars-armed) .ring-bar-fill {
+  width: 0 !important;
+}
+
+.status-card--5h .ring-bar-fill {
+  background: linear-gradient(90deg, var(--c-5h), var(--c-5h-deep));
+}
+
+.status-card--weekly .ring-bar-fill {
+  background: linear-gradient(90deg, var(--c-weekly), var(--c-weekly-deep));
+}
+
+.status-card-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ============ 6. 卡片基础 ============ */
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  padding: var(--pad-card);
+  box-shadow: var(--shadow-soft);
+  margin-bottom: var(--gap-card);
+  transition: box-shadow 0.3s var(--ease-soft);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-hover);
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+}
+
+.card-title-icon {
+  font-size: 18px;
+}
+
+.card-title-meta {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* ============ 7. 输入卡 ============ */
+.input-card {
+  position: relative;
+  /* 内部用 flex column，让备注区扩展吃掉 hero 给的多余高度 */
+  display: flex;
+  flex-direction: column;
+}
+
+/* 输入卡内部各元素的 flex 设置：
+   - 标题、空状态提示、备注、保存按钮 → 不缩不长
+   - 数字输入区（5h/weekly 两个大子卡）→ flex-grow:1 撑满剩余高度
+   这样多余空间被 5h/weekly 子卡吃掉，子卡变高、内部元素更舒展。
+   备注框保持自然高度（紧凑的几行）。 */
+.input-card > .card-title,
+.input-card > .empty-hint,
+.input-card > .note-row,
+.input-card > .save-row {
+  flex-shrink: 0;
+}
+
+.input-card > .input-row {
+  flex-grow: 1;
+  min-height: 0;  /* flex 子项必须，不然内部 grid 项撑不开 */
+}
+
+/* 输入子卡（5h / weekly）也用 flex column，
+   让 label / 大数字 / 进度条 / 步进按钮在更高的空间里均匀分布 */
+.input-sub {
+  display: flex;
+  flex-direction: column;
+}
+
+/* label 在顶部自然位置；
+   大数字给一个舒服的顶部留白（不再用 auto 推到正中间，
+   因为下面紧跟着进度条，整个视觉重心会被压低，看着像"挂在底下"）；
+   步进按钮用 margin-top:auto 推到底部，吸收剩余空间。 */
+/* 关键：给大数字、进度条、按钮都加 margin-top: auto，
+   flex 会把卡片里剩余的空白均匀分成三份塞到这三个间隙里，
+   而不是只塞在"按钮之前"——避免按钮孤立贴在卡片底部、
+   而 label/大数字/进度条挤成一坨堆在顶部。 */
+.input-sub > .big-number {
+  margin-top: auto;
+  margin-bottom: 0;
+}
+
+.input-sub > .bar-track {
+  margin-top: auto;
+}
+
+.input-sub > .stepper-row {
+  margin-top: auto;
+}
+
+.window-tag {
+  margin-left: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-soft);
+  padding: 4px 10px;
+  border-radius: 10px;
+}
+
+.window-tag.is-new {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
+}
+
+.empty-hint {
+  background: linear-gradient(135deg, var(--hint-grad-start) 0%, var(--hint-grad-end) 100%);
+  border-radius: var(--radius-sub);
+  padding: 14px 20px;
+  margin-bottom: 18px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.empty-hint b {
+  color: var(--c-5h-deep);
+  font-weight: 700;
+}
+
+.input-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.input-sub {
+  border-radius: var(--radius-sub);
+  padding: clamp(14px, 2vh, 22px) clamp(18px, 2.4vh, 24px);
+  position: relative;
+}
+
+.input-sub--5h {
+  background: var(--c-5h-soft);
+}
+
+.input-sub--weekly {
+  background: var(--c-weekly-soft);
+}
+
+.input-sub-label {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.big-number {
+  text-align: center;
+  font-family: var(--font-display);
+  /* 输入卡的超大数字也跟着视口高度自适应 */
+  font-size: clamp(52px, 7vh, 72px);
+  font-weight: 700;
+  line-height: 1;
+  margin: 8px 0 clamp(10px, 1.4vh, 16px);
+  color: var(--text-primary);
+}
+
+.input-sub--5h .big-number { color: var(--c-5h-deep); }
+.input-sub--weekly .big-number { color: var(--c-weekly-deep); }
+
+@keyframes bumpAnim {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.10); }
+  100% { transform: scale(1); }
+}
+
+.big-number.bump {
+  animation: bumpAnim 0.32s var(--ease-bounce);
+}
+
+.big-number-pct {
+  font-size: 32px;
+  font-weight: 600;
+  margin-left: 4px;
+  opacity: 0.7;
+  /* 默认基线对齐会让 % 紧贴大数字的下沿，看起来像"挂在数字底下"。
+     用 vertical-align 把它往上抬到接近大数字视觉中线的位置。 */
+  vertical-align: 0.32em;
+}
+
+/* —— 进度条 —— */
+.bar-track {
+  position: relative;
+  width: 100%;
+  height: 14px;
+  background: var(--bar-track-bg);
+  border-radius: 10px;
+  margin: 0 0 28px;
+  overflow: visible;
+}
+
+.bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 10px;
+  transition: width 0.4s var(--ease-soft);
+}
+
+.bar-fill--prev {
+  background: var(--overlay-strong);
+  z-index: 1;
+}
+
+.input-sub--5h .bar-fill--prev {
+  background: var(--c-5h-soft-deep);
+}
+
+.input-sub--weekly .bar-fill--prev {
+  background: var(--c-weekly-soft-deep);
+}
+
+.bar-fill--new {
+  background: var(--c-honey);
+  z-index: 2;
+  transition: width 0.4s var(--ease-soft), background 0.3s var(--ease-soft);
+}
+
+.bar-fill--new.is-reverse {
+  background: var(--c-reverse);
+}
+
+.bar-marker {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 0;
+  z-index: 3;
+  transition: left 0.4s var(--ease-soft);
+  pointer-events: none;
+}
+
+.marker-label {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+/* marker 位置在进度条最左侧（0%）时，默认的 translateX(-50%) 会把
+   label 的左半部分甩到进度条外面去。这个变体把对齐方式改成左对齐，
+   让 label 紧贴进度条左边沿向右延伸，不溢出。 */
+.marker-label.is-anchor-left {
+  transform: translateX(0);
+}
+
+/* 新一周第一笔的小标签：用 weekly 的鼠尾草绿强调，字重加重一点，
+   不透明度拉满。让用户一眼看到"🌱 新一周"这个特殊状态，而不是
+   淡成普通的灰色。 */
+.marker-label.is-new-week {
+  color: var(--c-weekly-deep);
+  font-weight: 600;
+  opacity: 1;
+  letter-spacing: 0.3px;
+}
+
+/* —— 步进按钮 —— */
+.stepper-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: clamp(14px, 2vh, 22px);
+  flex-wrap: wrap;
+}
+
+.stepper-gap {
+  width: 8px;
+}
+
+.step-btn {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 14px;
+  border-radius: var(--radius-btn);
+  transition:
+    transform 0.15s var(--ease-bounce),
+    box-shadow 0.2s var(--ease-soft),
+    background 0.2s var(--ease-soft);
+  min-width: 44px;
+}
+
+.step-btn--minus {
+  background: var(--overlay-mid);
+  color: var(--text-secondary);
+}
+
+.step-btn--minus:hover {
+  background: var(--overlay-strong);
+  color: var(--text-primary);
+}
+
+.step-btn--plus {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: 0 2px 6px rgba(180, 150, 110, 0.12);
+}
+
+.input-sub--5h .step-btn--plus {
+  background: var(--c-5h);
+  color: white;
+}
+
+.input-sub--5h .step-btn--plus:hover {
+  background: var(--c-5h-deep);
+}
+
+.input-sub--weekly .step-btn--plus {
+  background: var(--c-weekly);
+  color: white;
+}
+
+.input-sub--weekly .step-btn--plus:hover {
+  background: var(--c-weekly-deep);
+}
+
+.step-btn:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+/* —— 备注 —— */
+.note-row {
+  margin-top: clamp(14px, 2vh, 22px);
+}
+
+.note-row label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.note-row textarea {
+  width: 100%;
+  background: var(--bg-soft);
+  padding: 14px 18px;
+  border-radius: var(--radius-sub);
+  font-family: var(--font-hand);
+  font-size: 18px;
+  color: var(--text-primary);
+  resize: vertical;
+  /* 比之前 56px 稍舒服一点，但不会撑满 */
+  min-height: clamp(72px, 9vh, 100px);
+  line-height: 1.4;
+  transition: background 0.2s var(--ease-soft);
+}
+
+.note-row textarea::placeholder {
+  color: var(--text-mute);
+  font-family: var(--font-hand);
+  font-size: 17px;
+}
+
+.note-row textarea:focus {
+  background: var(--note-focus-bg);
+}
+
+/* —— 保存按钮 —— */
+.save-row {
+  display: flex;
+  justify-content: center;
+  margin-top: clamp(14px, 2vh, 22px);
+}
+
+.save-btn {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  padding: 14px 48px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--c-5h) 0%, var(--c-honey) 100%);
+  color: white;
+  box-shadow: 0 6px 18px rgba(245, 166, 120, 0.35);
+  transition:
+    transform 0.15s var(--ease-bounce),
+    box-shadow 0.3s var(--ease-soft);
+  letter-spacing: 1px;
+}
+
+.save-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(245, 166, 120, 0.45);
+}
+
+.save-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* ============ 8. 中间一行：汇率卡 + 周曲线 ============ */
+.middle-row {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: var(--gap-card);
+  margin-bottom: var(--gap-card);
+}
+
+/* —— 汇率卡 —— */
+.rate-card {
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rate-big {
+  font-family: var(--font-display);
+  font-size: 56px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--c-rate-deep);
+  line-height: 1.1;
+  margin-top: 4px;
+}
+
+.rate-explain {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  margin-bottom: 18px;
+}
+
+.rate-divider {
+  height: 1px;
+  background: var(--c-divider);
+  margin: 6px 0 16px;
+}
+
+.rate-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rate-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.rate-stat-label {
+  color: var(--text-secondary);
+}
+
+.rate-stat-value {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+.rate-trend {
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 16px;
+  padding: 8px 12px;
+  border-radius: var(--radius-btn);
+  background: var(--bg-soft);
+  color: var(--text-secondary);
+}
+
+.rate-trend.is-up {
+  background: rgba(232, 156, 126, 0.15);
+  color: var(--c-warn);
+}
+.rate-trend.is-down {
+  background: rgba(184, 212, 168, 0.2);
+  color: var(--c-weekly-deep);
+}
+
+/* 趋势图常驻显示，不再有展开/折叠按钮。
+   高度做小、做精致，让汇率卡的总高度刚好和右边的 weekly 卡对齐。
+   margin-top:auto 把它推到汇率卡的底部，吸收上方 stat 列表和卡片底部之间的剩余空间，
+   两张卡 grid 默认 stretch 等高时，趋势图就被自然"撑"在汇率卡的下半部分。 */
+.rate-chart-wrap {
+  margin-top: auto;
+  padding-top: 14px;
+  height: 110px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* —— 周曲线卡 —— */
+.weekly-card {
+  margin-bottom: 0;
+}
+
+.weekly-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.weekly-nav .nav-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+
+.weekly-nav-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 90px;
+  text-align: center;
+}
+
+.nav-btn:disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.weekly-chart-wrap {
+  height: 320px;
+  position: relative;
+  /* 翻页时让旧图"淡出→重建→淡入"对称过渡，而不是瞬间消失 */
+  transition: opacity 0.28s var(--ease-soft, ease);
+}
+
+.weekly-chart-wrap.is-leaving {
+  opacity: 0;
+}
+
+.weekly-prediction {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 10px 16px;
+  border-radius: var(--radius-btn);
+  background: var(--bg-soft);
+}
+
+.weekly-prediction.is-safe {
+  background: rgba(184, 212, 168, 0.18);
+  color: var(--c-weekly-deep);
+}
+.weekly-prediction.is-warn {
+  background: rgba(232, 156, 126, 0.15);
+  color: var(--c-warn);
+}
+
+/* ============ 9. 5h 历史卡 ============ */
+.history-card {
+  /* 已经从 .card 继承 */
+}
+
+.history-detail {
+  /* 容器 */
+}
+
+.history-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.nav-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--bg-soft);
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: all 0.2s var(--ease-soft);
+}
+
+.nav-btn:hover {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+}
+
+.history-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  min-width: 220px;
+  text-align: center;
+}
+
+.window-chart-wrap {
+  height: 240px;
+  position: relative;
+  /* 翻页时让旧图"淡出→重建→淡入"对称过渡，而不是瞬间消失 */
+  transition: opacity 0.28s var(--ease-soft, ease);
+}
+
+.window-chart-wrap.is-leaving {
+  opacity: 0;
+}
+
+.window-summary {
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 14px 0 18px;
+}
+
+/* —— 备注区（默认显示最新一条 + 可展开看全部）—— */
+.notes-area {
+  background: var(--bg-soft);
+  border-radius: var(--radius-sub);
+  padding: 16px 20px;
+}
+
+/* 默认显示的"最新一条"备注：单行排版，时间 + 百分比 + 备注内容 */
+.notes-latest {
+  font-family: var(--font-hand);
+  font-size: 17px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 当没有任何备注时给一个低调的占位提示 */
+.notes-latest.is-empty {
+  color: var(--text-mute);
+  font-size: 15px;
+  font-style: italic;
+}
+
+.notes-expand-btn[hidden] {
+  display: none;
+}
+.notes-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px auto 0;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  transition: all 0.2s var(--ease-soft);
+}
+/* 让按钮在水平方向上还是居中 */
+.notes-area {
+  text-align: center;
+}
+.notes-area > .notes-latest,
+.notes-area > .notes-list {
+  text-align: left;
+}
+
+.notes-expand-btn:hover {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+}
+
+/* 单箭头：默认指向下（展开），点开后旋转 180° 指向上（收起）。
+   transform 有过渡，旋转和列表本身的塌缩同步进行。 */
+.notes-expand-chev {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1;
+  transition: transform 0.4s var(--ease-soft);
+}
+
+.notes-expand-btn.is-open .notes-expand-chev {
+  transform: rotate(180deg);
+}
+
+/* 展开后的备注列表：每条一行，带时间和百分比，可滚动。
+   动画思路：用 max-height + opacity + padding/margin/border 同时过渡，
+   收起时 max-height 压到 0、opacity 渐隐、上下间距和分割线一起塌缩，
+   感觉就是"列表柔和地往上收回去"，而不是硬切。
+   max-height 用 280px 的固定上限是常见做法——内容真高不到 280 时
+   动画时长会显得稍长一点，但比"用 height: auto 完全不能动画"好得多。 */
+.notes-list {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--c-divider);
+  /* 上限拉到 440px，常见的 3~4 条短备注根本就不会触发滚动，
+     滚动条就不会出现，就不会有那根灰色的粗杠子破坏治愈感了 */
+  max-height: 440px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 滚动条变细 + 半透明（Firefox） */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 110, 100, 0.18) transparent;
+  transition:
+    max-height 0.5s var(--ease-soft),
+    opacity 0.35s var(--ease-soft),
+    padding-top 0.4s var(--ease-soft),
+    margin-top 0.4s var(--ease-soft),
+    border-top-color 0.35s var(--ease-soft);
+}
+
+/* WebKit/Chromium/Edge 的滚动条定制：
+   - 整体宽度只有 6px，比默认细很多
+   - 轨道完全透明（只在拇指处看到一点存在感）
+   - 拇指用半透明的暖灰色，hover 时稍微加深，平时几乎看不见
+   这样真的需要滚动时也只是一根细细的小条，不会破坏卡片的治愈感 */
+.notes-list::-webkit-scrollbar {
+  width: 6px;
+}
+.notes-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.notes-list::-webkit-scrollbar-thumb {
+  background: rgba(120, 110, 100, 0.18);
+  border-radius: 3px;
+}
+.notes-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 110, 100, 0.32);
+}
+
+/* 收起态：用 class 而不是 [hidden]，因为 [hidden] 是 display:none，
+   不能 transition。这个 class 表示"在 DOM 里、可被动画、当前折叠"。 */
+.notes-list.is-collapsed {
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  margin-top: 0;
+  border-top-color: transparent;
+  overflow: hidden;
+}
+
+/* 动画过程中临时禁用 overflow: auto。
+   原因：展开时 overflow 一旦从 hidden 切回 auto，浏览器在
+   max-height 还没涨够的瞬间就会显示滚动条（因为它判断"内容溢出了"），
+   等 max-height 涨够之后又消失——这一闪一隐会触发 reflow，画面抽一下。
+   动画结束后由 JS 移除这个 class，让 overflow:auto 恢复，
+   真的需要滚动时仍然可以滚。 */
+.notes-list.is-animating {
+  overflow: hidden;
+}
+
+/* 完全藏起来的兜底：当窗口里没备注 / 只有一条时根本不需要列表，
+   用 [hidden] 直接 display:none，这种情况下没动画也没所谓 */
+.notes-list[hidden] {
+  display: none;
+}
+
+.note-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border-radius: 10px;
+}
+
+/* meta 行：低调的灰色小字 "14:32 · 78%"——
+   之前 % 是橙色加粗，在一片柔和的灰里跳得太厉害，看着突兀。
+   现在和时间用一样的颜色和字重，只用 · 分隔，整行融为一体。 */
+.note-item-meta {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-mute);
+  letter-spacing: 0.3px;
+}
+
+.note-item-meta .note-item-pct {
+  color: inherit;
+  font-weight: inherit;
+}
+
+.note-item-text {
+  font-family: var(--font-hand);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ============ 10. 底部 ============ */
+.bottom-bar {
+  text-align: center;
+  padding: 32px 0 0;
+  color: var(--text-mute);
+  font-size: 13px;
+}
+
+/* ============ 11. 设置弹层 ============ */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-mask-bg);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.25s var(--ease-soft);
+}
+
+/* 关键修复：确保 [hidden] 属性能正确隐藏弹层
+   （没有这条规则的话，上面的 display: flex 会覆盖 [hidden] 自带的 display: none）*/
+.modal-mask[hidden] {
+  display: none;
+}
+
+/* 关闭态：遮罩淡出 + 弹层下滑淡出，正好是打开动画的镜像。
+   forwards 让动画结束后停在最后一帧（透明），
+   不会在 JS 真正 hidden=true 之前先弹回 opacity:1 抖一下。 */
+.modal-mask.is-closing {
+  animation: fadeOut 0.28s var(--ease-soft) forwards;
+}
+
+.modal-mask.is-closing .modal {
+  animation: slideDown 0.28s var(--ease-soft) forwards;
+}
+
+.modal {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  width: 480px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 24px 60px rgba(74, 63, 53, 0.2);
+  animation: slideUp 0.3s var(--ease-soft);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--c-divider);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modal-body {
+  padding: 22px 28px 28px;
+  overflow-y: auto;
+  /* Firefox 滚动条：细条 + 半透明暖灰，和笔记列表保持一致 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 110, 100, 0.25) transparent;
+}
+
+/* Webkit 滚动条（Chrome / Edge / Safari）*/
+.modal-body::-webkit-scrollbar {
+  width: 5px;
+}
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.modal-body::-webkit-scrollbar-thumb {
+  background: rgba(120, 110, 100, 0.22);
+  border-radius: 3px;
+}
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 110, 100, 0.38);
+}
+
+/* ---- 治愈风确认弹窗（替代原生 confirm()） ----
+   基于 .modal 的外框动画，内部排版窄一圈、内容居中。
+   结构：[大图标] [主标题] [详细说明（可选）] [一对按钮] */
+.confirm-dialog {
+  width: 380px;
+  max-width: 92vw;
+  padding: 32px 32px 26px;
+  text-align: center;
+  /* 覆盖 .modal 的 column + max-height，让弹窗高度跟内容走 */
+  max-height: none;
+}
+
+.confirm-icon {
+  font-size: 42px;
+  line-height: 1;
+  margin-bottom: 14px;
+  /* 让图标微微"呼吸"一下：轻微下移再还原，制造"冒出来"的感觉 */
+  animation: confirmIconIn 0.5s var(--ease-bounce);
+}
+
+@keyframes confirmIconIn {
+  0%   { transform: translateY(-6px) scale(0.8); opacity: 0; }
+  60%  { transform: translateY(2px) scale(1.06); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.confirm-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.45;
+  margin-bottom: 10px;
+}
+
+.confirm-message {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  margin-bottom: 26px;
+  white-space: pre-line;  /* 让 \n 能在 HTML 里断行 */
+}
+
+/* 没有 message 时，title 和按钮之间要补一点间距 */
+.confirm-dialog .confirm-title:last-of-type {
+  margin-bottom: 26px;
+}
+
+.confirm-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.confirm-btn {
+  min-width: 112px;
+  padding: 12px 22px;
+  border-radius: var(--radius-btn);
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  transition:
+    background 0.2s var(--ease-soft),
+    transform 0.15s var(--ease-bounce),
+    box-shadow 0.25s var(--ease-soft);
+}
+
+.confirm-btn--cancel {
+  background: var(--overlay-mid);
+  color: var(--text-secondary);
+}
+
+.confirm-btn--cancel:hover {
+  background: var(--overlay-strong);
+  transform: translateY(-1px);
+}
+
+.confirm-btn--confirm {
+  background: linear-gradient(135deg, var(--c-5h) 0%, var(--c-honey) 100%);
+  color: #FFFFFF;
+  box-shadow: 0 6px 16px rgba(245, 166, 120, 0.32);
+}
+
+.confirm-btn--confirm:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(245, 166, 120, 0.42);
+}
+
+.confirm-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* danger 变体：清空数据这种不可逆操作用珊瑚橘警示色 */
+.confirm-dialog.is-danger .confirm-btn--confirm {
+  background: linear-gradient(135deg, var(--c-warn) 0%, #F4B48E 100%);
+  box-shadow: 0 6px 16px rgba(232, 156, 126, 0.38);
+}
+
+.confirm-dialog.is-danger .confirm-btn--confirm:hover {
+  box-shadow: 0 10px 22px rgba(232, 156, 126, 0.5);
+}
+
+/* focus 指示（键盘导航无障碍）*/
+.confirm-btn:focus-visible {
+  outline: 2px solid var(--c-honey);
+  outline-offset: 3px;
+}
+
+.confirm-dialog.is-danger .confirm-btn--confirm:focus-visible {
+  outline-color: var(--c-warn);
+}
+
+/* —— 大块（章节）—— 用更显眼的标题分割三大主题区 */
+.settings-section {
+  margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--c-divider);
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
+.settings-section-head {
+  margin-bottom: 18px;
+}
+
+.settings-section-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+  margin: 0 0 4px;
+}
+
+.settings-section-sub {
+  font-size: 12px;
+  color: var(--text-mute);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* —— 子分组 —— 章节里的小段落 */
+.settings-group {
+  margin-bottom: 20px;
+}
+
+.settings-group:last-child {
+  margin-bottom: 0;
+}
+
+.settings-group h4,
+.settings-group-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  letter-spacing: 0.4px;
+  margin-bottom: 10px;
+  text-transform: none;
+}
+
+/* —— 危险区子分组：含蓄的暖红边框圈住，提示但不刺眼 —— */
+.settings-group--danger {
+  background: rgba(232, 156, 126, 0.06);
+  border: 1px solid rgba(232, 156, 126, 0.22);
+  border-radius: var(--radius-sub);
+  padding: 14px 16px 12px;
+  margin-top: 22px;
+}
+
+.settings-group-title--danger {
+  color: var(--c-warn);
+  margin-bottom: 4px;
+}
+
+.settings-danger-sub {
+  font-size: 12px;
+  color: var(--text-mute);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.settings-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.settings-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.settings-row input[type="number"] {
+  width: 60px;
+  text-align: center;
+  background: var(--bg-soft);
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.settings-row select {
+  background: var(--bg-soft);
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.settings-hint {
+  font-size: 12px;
+  color: var(--text-mute);
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+/* —— 5h 校准面板的"当前窗口"信息条 —— */
+.calibrate-info {
+  background: var(--c-5h-soft);
+  border-radius: var(--radius-btn);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--c-5h-deep);
+  font-weight: 600;
+  margin-bottom: 10px;
+  font-family: var(--font-display);
+}
+
+.calibrate-info.is-empty {
+  background: var(--bg-soft);
+  color: var(--text-mute);
+  font-weight: 400;
+}
+
+/* 禁用状态的输入/按钮，表示当前没窗口可校准 */
+.settings-row input[type="number"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.text-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.text-btn {
+  font-size: 13px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  transition: background 0.2s var(--ease-soft),
+              border-color 0.2s var(--ease-soft),
+              color 0.2s var(--ease-soft);
+}
+
+.text-btn:hover {
+  background: var(--c-divider);
+}
+
+/* —— 主按钮：用 weekly 鼠尾草绿做填充，强调"日常会用"的高频操作 —— */
+.text-btn--primary {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
+  font-weight: 600;
+}
+
+.text-btn--primary:hover {
+  background: var(--c-weekly-soft-deep);
+  color: var(--c-weekly-deep);
+}
+
+/* —— 幽灵按钮：透明底 + 细边框，视觉权重最低，给次要操作 —— */
+.text-btn--ghost {
+  background: transparent;
+  border-color: var(--c-divider);
+  color: var(--text-secondary);
+}
+
+.text-btn--ghost:hover {
+  background: var(--bg-soft);
+  border-color: var(--text-mute);
+  color: var(--text-primary);
+}
+
+/* —— 危险按钮：暗暖红 + 浅底，含蓄但能识别 —— */
+.text-btn--danger {
+  background: rgba(232, 156, 126, 0.08);
+  color: var(--c-warn);
+  border-color: rgba(232, 156, 126, 0.25);
+}
+
+.text-btn--danger:hover {
+  background: rgba(232, 156, 126, 0.18);
+  border-color: rgba(232, 156, 126, 0.45);
+}
+
+/* —— 通用按钮行：统一行内按钮的间距和换行 —— */
+.settings-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-btn-row--primary {
+  margin-top: 4px;
+}
+
+.settings-btn-row--secondary {
+  margin-top: 2px;
+}
+
+/* ============ 11b. 云同步 ============
+   顶栏状态灯 + 设置面板里的云同步区块 */
+
+/* —— 顶栏的云朵按钮（同步状态灯）—— */
+/* 注意：.icon-btn 设了 display: flex，会覆盖 [hidden] 的默认 display: none。
+   必须显式告诉浏览器"带 hidden 属性的时候真的不要显示"。 */
+.sync-icon-btn[hidden] {
+  display: none !important;
+}
+
+.sync-icon-btn {
+  /* 继承 .icon-btn 的 36x36 圆形 + 居中 */
+  position: relative;
+}
+
+.sync-icon-btn .sync-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.sync-icon-btn .sync-dot {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--c-safe);
+  box-shadow: 0 0 0 2px var(--bg-page);
+  transition: background 0.3s var(--ease-soft);
+}
+
+.sync-icon-btn.is-syncing .sync-dot {
+  background: var(--c-5h);
+  animation: syncPulse 1.2s var(--ease-soft) infinite;
+}
+
+.sync-icon-btn.is-error .sync-dot {
+  background: var(--c-warn);
+}
+
+@keyframes syncPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(1.35);
+  }
+}
+
+/* —— 设置面板里的云同步区块 —— */
+.sync-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  padding: 10px 14px;
+  background: var(--bg-soft);
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.sync-hint a {
+  color: var(--c-weekly-deep);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.sync-field-row {
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sync-field-row .sync-field-label {
+  flex-shrink: 0;
+  min-width: 72px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  letter-spacing: 0.3px;
+}
+
+.sync-field-row input[type="password"],
+.sync-field-row input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  background: var(--bg-soft);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+  transition: border-color 0.2s var(--ease-soft), background 0.2s var(--ease-soft);
+}
+
+.sync-field-row input[type="password"]:focus,
+.sync-field-row input[type="text"]:focus {
+  background: var(--bg-card);
+  border-color: var(--c-weekly);
+}
+
+.sync-field-row input::placeholder {
+  color: var(--text-mute);
+  font-family: inherit;
+}
+
+.sync-btn-row {
+  gap: 8px;
+}
+
+.sync-pause-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sync-pause-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.sync-pause-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--c-5h);
+  cursor: pointer;
+  margin: 0;
+}
+
+.sync-pause-label {
+  flex: 1;
+}
+
+.sync-pause-hint {
+  font-size: 12px;
+  color: var(--text-mute);
+  line-height: 1.5;
+  padding-left: 26px;
+}
+
+.sync-status-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-soft);
+  border: 1px solid var(--c-divider);
+  border-radius: 14px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  min-height: 44px;
+  font-weight: 500;
+}
+
+.sync-status-box .sync-status-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-mute);
+  transition: background 0.3s var(--ease-soft);
+}
+
+.sync-status-box.is-ok {
+  background: var(--c-5h-soft);
+}
+.sync-status-box.is-ok .sync-status-dot {
+  background: var(--c-safe);
+}
+.sync-status-box.is-ok .sync-status-text {
+  color: var(--c-5h-deep);
+}
+
+.sync-status-box.is-syncing {
+  background: var(--c-weekly-soft);
+}
+.sync-status-box.is-syncing .sync-status-dot {
+  background: var(--c-5h);
+  animation: syncPulse 1.2s var(--ease-soft) infinite;
+}
+.sync-status-box.is-syncing .sync-status-text {
+  color: var(--c-weekly-deep);
+}
+
+.sync-status-box.is-error {
+  background: rgba(232, 156, 126, 0.12);
+}
+.sync-status-box.is-error .sync-status-dot {
+  background: var(--c-warn);
+}
+.sync-status-box.is-error .sync-status-text {
+  color: var(--c-warn);
+}
+
+.sync-status-box.is-paused {
+  background: var(--bg-soft);
+  opacity: 0.75;
+}
+.sync-status-box.is-paused .sync-status-dot {
+  background: var(--text-mute);
+}
+.sync-status-box.is-paused .sync-status-text {
+  color: var(--text-secondary);
+}
+
+/* 顶栏同步按钮的暂停态：半透明提示当前已暂停，防止忘记恢复 */
+#sync-btn.is-paused {
+  opacity: 0.55;
+  filter: grayscale(0.5);
+}
+
+/* ============ 12. Toast 小提示 ============ */
+.toast {
+  position: fixed;
+  bottom: 32px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--toast-bg);
+  color: var(--toast-text);
+  padding: 12px 24px;
+  border-radius: 999px;
+  font-size: 14px;
+  box-shadow: 0 8px 24px rgba(74, 63, 53, 0.25);
+  z-index: 200;
+  animation: toastIn 0.3s var(--ease-soft);
+}
+
+/* ============ 13. 动画 ============ */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(20px); }
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ==== 保存瞬间的"四层绽放"动画 ====
+   以前只有一个 glow，看着很单薄、像"屏幕外围亮了一下"。
+   现在是 4 层并行动画：
+   1) 卡片整体 scale 轻微回弹    → 触感上"被按了一下又弹起来"
+   2) 保存按钮 scale down + overshoot → 按下去的那颗被按的按钮本身要响应
+   3) 大数字"盖章式"向下压 1px + 微暗 → 潜意识提示"数字被写进日记了"
+   4) 光晕扩散（保留并加强）     → 前 3 层收尾后光晕继续余韵
+   所有动画从 .is-saving class 加上那一瞬间同时开跑，
+   但各自的缓动曲线和 duration 决定了节奏感。 */
+
+@keyframes glow {
+  0%   { box-shadow: 0 0 0 0 rgba(244, 213, 141, 0.55); }
+  40%  { box-shadow: 0 0 0 32px rgba(244, 213, 141, 0.28); }
+  100% { box-shadow: 0 0 0 60px rgba(244, 213, 141, 0); }
+}
+
+@keyframes cardSavePulse {
+  0%   { transform: scale(1); }
+  18%  { transform: scale(0.985); }
+  55%  { transform: scale(1.006); }
+  100% { transform: scale(1); }
+}
+
+@keyframes saveBtnPulse {
+  0%   { transform: scale(1); }
+  20%  { transform: scale(0.94); }
+  55%  { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+@keyframes numberStamp {
+  0%   { transform: translateY(0); opacity: 1; }
+  25%  { transform: translateY(1px); opacity: 0.78; }
+  70%  { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.input-card.is-saving {
+  animation:
+    cardSavePulse 0.55s var(--ease-bounce),
+    glow 1s var(--ease-soft);
+}
+
+/* 保存按钮自己的响应。用 .input-card.is-saving 作前缀保证只在保存瞬间触发，
+   不会跟 .save-btn:hover / :active 的 transition 打架（动画期间会覆盖 transform）。 */
+.input-card.is-saving .save-btn {
+  animation: saveBtnPulse 0.5s var(--ease-bounce);
+}
+
+/* 两个输入子卡里的大数字同时"盖章"。
+   注意：.big-number 本身还有 .bump 动画（步进按钮点击时触发），
+   但那个靠 class 触发、是独立动画，不会和这里的 animation 冲突——
+   这里的 animation 只在 .input-card.is-saving 生效、时长也更短。 */
+.input-card.is-saving .big-number {
+  animation: numberStamp 0.5s var(--ease-soft);
+}
+
+/* ============ 13b. 首屏 staggered 入场动画 ============
+   触发时机：JS 全部渲染完毕后 body 加上 .is-ready 类。
+   各个区块用不同的 delay 错开，形成"轻轻铺开"的入场感。
+   注意：第二屏的 .middle-row / .history-card 不在这里入场，
+        它们交给 IntersectionObserver 触发的滚动入场来管。 */
+
+@keyframes topbarEnter {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes inputCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 默认状态：在 .is-ready 触发前先把首屏的元素藏起来，
+   防止淡入前的一帧被瞥见 */
+body:not(.is-ready) .topbar,
+body:not(.is-ready) .status-row,
+body:not(.is-ready) .input-card {
+  opacity: 0;
+}
+
+body.is-ready .topbar {
+  animation: topbarEnter 0.85s var(--ease-soft) 0s both;
+}
+
+body.is-ready .status-row .status-card--5h {
+  animation: cardEnter 0.95s var(--ease-soft) 0.2s both;
+}
+
+body.is-ready .status-row .status-card--weekly {
+  animation: cardEnter 0.95s var(--ease-soft) 0.35s both;
+}
+
+body.is-ready .input-card {
+  animation: inputCardEnter 1.05s var(--ease-soft) 0.55s both;
+}
+
+/* ============ 13c. 滚动入场动画（scroll-reveal） ============
+   第二屏的卡片默认透明 + 下移，
+   JS 用 IntersectionObserver 观察到它们进入视窗时加 .is-revealed，
+   触发淡入 + 上浮。每张卡只触发一次。 */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(34px);
+  transition:
+    opacity 1s var(--ease-soft),
+    transform 1s var(--ease-soft);
+  will-change: opacity, transform;
+}
+
+.scroll-reveal.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ============ 14. 响应式（手机） ============
+   核心思路：
+   1. 第一屏 (.status-row / .input-row) 保持双列对称，不拆成单列——
+      拆成单列会让每张卡独占整行，大数字反而看起来"巨大"。
+   2. 只有第二屏的 .middle-row 堆叠。
+   3. 所有跟视口高度走 (vh) 的大字号都改成跟宽度走 (vw)，
+      因为手机竖屏下"宽度紧缺、高度够用"，字号必须跟宽度走。 */
+@media (max-width: 900px) {
+  .page {
+    padding: 0 12px clamp(24px, 4vh, 40px);
+  }
+
+  /* 只让第二屏堆叠 */
+  .middle-row {
+    grid-template-columns: 1fr;
+  }
+
+  /* —— 第一屏容器 / 顶栏 —— */
+  .hero {
+    padding-top: clamp(10px, 1.2vh, 18px);
+    padding-bottom: clamp(14px, 2vh, 22px);
+  }
+
+  /* 手机端走"方案 C"：砍掉日期和 weekly 倒计时这两块元数据，
+     让标题成为顶栏的视觉中心。日期手机系统通知栏自带，
+     weekly 倒计时下面的 Weekly 状态卡里也有，删了不会丢任何信息。
+     标题不再被横向挤压，可以恢复到接近 PC 的字号、不再折行。 */
+  .topbar-title {
+    font-size: 22px;
+    white-space: nowrap;
+  }
+
+  .topbar-icon {
+    font-size: 24px;
+  }
+
+  /* 隐藏日期 + 分隔点 + weekly 倒计时三块文字元数据。
+     .topbar-meta 里剩下的就只有云同步、主题、设置三个圆形图标按钮。 */
+  #today-date,
+  .topbar-divider,
+  #weekly-reset-info {
+    display: none;
+  }
+
+  /* 标题占满左边、图标组占满右边，中间留白自然形成
+     "品牌 vs 工具区" 的视觉分组 */
+  .topbar-meta {
+    gap: 6px;
+  }
+
+  /* —— 状态卡（保持双列，每张卡约 160~200px 宽）——
+     双列下宽度受限，上下方向也必须同步压缩，
+     否则会变成"立起来的长方形"看着不舒服 */
+  .status-row {
+    gap: 10px;
+  }
+
+  .status-card {
+    padding: 10px 12px;
+  }
+
+  .status-card-label {
+    font-size: 11px;
+  }
+
+  .status-card-value {
+    /* 桌面 clamp(46px, 6vh, 64px) → 手机改成跟视口宽度走 */
+    font-size: clamp(28px, 8.5vw, 40px);
+    margin-top: 2px;
+    line-height: 1;
+  }
+
+  .status-card-pct {
+    font-size: 15px;
+    margin-left: 2px;
+  }
+
+  .ring-bar {
+    height: 5px;
+    margin-top: 6px;
+  }
+
+  .status-card-meta {
+    margin-top: 6px;
+    font-size: 10.5px;
+    gap: 6px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+
+  .status-card-meta > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* —— 输入卡 —— */
+  .card-title {
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+
+  .input-row {
+    gap: 10px;
+  }
+
+  .input-sub {
+    padding: 10px 12px;
+  }
+
+  /* 手机端：让输入子卡按内容自然高度排，不再吸收 hero 的剩余空间。
+     之前 input-row 用 flex-grow:1 把空间灌进子卡，再用 margin: auto
+     在子卡内部均分，桌面 4:5 的子卡看着透气；可手机子卡只有 ~170px 宽，
+     被拉到 500+px 高就变成 1:3 的细长条，均分出来的缝都是上百像素，
+     看起来"细长鬼影"。
+     这里把吸收的对象从子卡换成下面的备注框：input-row 不再 flex-grow，
+     note-row 接过 flex-grow，textarea 跟着撑满 note-row。
+     好处是子卡回归紧凑、备注框变大方便写字，第一屏锁高度依旧。 */
+  .input-card > .input-row {
+    flex-grow: 0;
+  }
+
+  .input-card > .note-row {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .note-row textarea {
+    flex: 1;
+    min-height: clamp(80px, 12vh, 120px);
+  }
+
+  /* 子卡内不再有剩余空间可分配，margin: auto 会塌到 0，
+     label 和 big-number 会贴在一起。这里给 big-number 一个
+     固定 top margin 维持透气感；stepper-row 的 bottom auto 同样
+     失效，子卡 padding 自己兜住底部即可。 */
+  .input-sub > .big-number {
+    margin-top: 14px;
+    margin-bottom: 0;
+  }
+
+  /* 进度条下方需要留够空间给 ↑XX 那个 absolute 定位的小标签，
+     之前为了配合 margin: auto 把这里强制设成 0 了，结果手机上子卡变紧凑后
+     标签会戳到按钮上。这里恢复一个足够的下边距让标签安心待在进度条和按钮之间。 */
+  .input-sub > .bar-track {
+    margin-top: 10px;
+    margin-bottom: clamp(20px, 2.6vh, 26px);
+  }
+
+  .input-sub > .stepper-row {
+    margin-top: 12px;
+    margin-bottom: 0;
+  }
+
+  .input-sub-label {
+    font-size: 11px;
+  }
+
+  .big-number {
+    /* 桌面 clamp(52px, 7vh, 72px) → 手机改成跟视口宽度走 */
+    font-size: clamp(34px, 10vw, 48px);
+    margin: 6px 0 10px;
+  }
+
+  .big-number-pct {
+    font-size: 20px;
+  }
+
+  .bar-track {
+    height: 10px;
+    margin-bottom: 16px;
+  }
+
+  .stepper-row {
+    gap: 4px;
+    margin-top: clamp(8px, 1.2vh, 14px);
+  }
+
+  .step-btn {
+    padding: 7px 9px;
+    font-size: 12px;
+    min-width: 34px;
+  }
+
+  /* 手机上子卡太窄，6 个步进按钮一行放不下，会被 flex-wrap 挤折行。
+     原本 stepper-gap 只是个 4px 的小空隙，折行后跟着哪一行是看 flex 算的，
+     导致两行总宽度不一致、−1 和 +1 没对齐。
+     这里把它变成"占满整行的零高度元素"，强制成为换行点：
+     minus 三个稳定停在第一行、plus 三个稳定停在第二行，
+     两行各自 3 个按钮，居中后 −1 和 +1 自然在同一列上。 */
+  .stepper-gap {
+    flex-basis: 100%;
+    width: 0;
+    height: 0;
+  }
+}
+
+/* 超窄屏（<=380px，比如 iPhone SE）再紧一档 */
+@media (max-width: 380px) {
+  .status-card-value {
+    font-size: 28px;
+  }
+
+  .status-card-pct {
+    font-size: 14px;
+  }
+
+  .big-number {
+    font-size: 32px;
+  }
+
+  .big-number-pct {
+    font-size: 18px;
+  }
+
+  .step-btn {
+    padding: 6px 7px;
+    font-size: 11px;
+    min-width: 30px;
+  }
+
+  .stepper-row {
+    gap: 3px;
+  }
+}

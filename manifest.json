@@ -1,0 +1,21 @@
+{
+  "name": "额度小日记",
+  "short_name": "额度小日记",
+  "description": "一个用来缓解 Claude 额度焦虑的小手账",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5EFE4",
+  "theme_color": "#3A2A20",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "assets/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
