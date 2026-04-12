@@ -389,11 +389,21 @@ function resetDraft() {
 // 调用时机：每分钟的 setInterval + 页面从后台切回前台时（visibilitychange）。
 function maybeRefreshDraft() {
   // 判断"用户没有正在编辑"：草稿值仍然等于上次保存的值
-  // 只要任一项被用户动过（点过 +/- 按钮），就完全不碰，保护进行中的操作
   const untouched =
     state.draft5h === state.draftPrev5h &&
     state.draftWeekly === state.draftPrevWeekly;
-  if (!untouched) return;
+
+  // 即使用户正在编辑，也要检查窗口是否已经过期。
+  // 如果旧窗口已经结束了，那用户正在编辑的值是针对一个已经不存在的窗口，
+  // 继续显示旧窗口的标签会误导——必须强制刷新。
+  // 只有"窗口没变 + 用户在编辑"的组合才跳过。
+  if (!untouched) {
+    const lastRecord = state.records[state.records.length - 1];
+    const now = Date.now();
+    const windowStillAlive = lastRecord && now < lastRecord.windowId + FIVE_HOURS_MS;
+    if (windowStillAlive) return;  // 同一个窗口内，保护用户的编辑
+    // 窗口已过期 → 不管用户编辑了什么，往下走强制刷新
+  }
 
   // 快照当前 draft 相关字段，准备做前后对比
   const before = {
@@ -682,14 +692,18 @@ function renderRateCard() {
   const peak = computePeakRate(windows, state.settings);
   const offpeak = computeOffPeakRate(windows, state.settings);
 
-  $('#rate-big').textContent = current !== null ? current.toFixed(2) : '—';
+  // 显示时取倒数：从 "1% 5h ≈ 0.85% weekly" 反过来写成 "1.18% 5h = 1% weekly"
+  // 和日常汇率习惯一致（"6.5 人民币 = 1 美元"）
+  const rateDisplay = (v) => v !== null && v > 0 ? (1 / v).toFixed(2) : '—';
+
+  $('#rate-big').textContent = rateDisplay(current);
   $('#rate-explain').textContent = current !== null
-    ? `1% 5h ≈ ${current.toFixed(2)}% weekly`
+    ? `${rateDisplay(current)}% 5h = 1% weekly`
     : '等数据中…（最近 6 小时还没有可计算的窗口）';
 
-  $('#rate-overall').textContent = overall !== null ? overall.toFixed(2) : '—';
-  $('#rate-peak').textContent = peak !== null ? peak.toFixed(2) : '—';
-  $('#rate-offpeak').textContent = offpeak !== null ? offpeak.toFixed(2) : '—';
+  $('#rate-overall').textContent = rateDisplay(overall);
+  $('#rate-peak').textContent = rateDisplay(peak);
+  $('#rate-offpeak').textContent = rateDisplay(offpeak);
 
   const trendEl = $('#rate-trend');
   if (current !== null && overall !== null) {
@@ -729,7 +743,7 @@ function renderRateTrendChart() {
   const labels = allLabels.slice(-4);
   const data = labels.map(k => {
     const r = computeRateForWindows(byDay.get(k), state.settings);
-    return r !== null ? +r.toFixed(2) : null;
+    return r !== null && r > 0 ? +(1 / r).toFixed(2) : null;
   });
 
   const ctx = $('#rate-chart').getContext('2d');
@@ -813,7 +827,12 @@ function renderWeeklyChart(mode = 'update') {
       );
       if (recordsInWeek.length === 0) return null;
       const lastRecord = recordsInWeek[recordsInWeek.length - 1];
-      return { x: lastRecord.timestamp, y: lastRecord.weekly };
+      // X 坐标用窗口结束时间（整点），这样点在时间轴上不会乱飘。
+      // 但当前还没结束的活跃窗口例外——它的结束时间在未来，
+      // 画到未来会误导，用最后一条记录的真实时间即可。
+      const isActive = Date.now() < w.endTime;
+      const x = isActive ? lastRecord.timestamp : w.endTime;
+      return { x, y: lastRecord.weekly };
     })
     .filter(Boolean);
 
@@ -958,19 +977,15 @@ function renderWeeklyChart(mode = 'update') {
         },
         tooltip: tooltipStyle({
           callbacks: {
-            // 把 x 轴的 13 位时间戳格式化成人类能看懂的"月/日 周X 时:分"
             title: (items) => {
               if (!items.length) return '';
               const d = new Date(items[0].parsed.x);
               const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
-              return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+              return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${pad(d.getHours())}:00`;
             },
-            // "实际"那条曲线的点其实是窗口的代表点，文案改成"窗口结束时 X%"更准确。
-            // 预测线的 y 是按速率推算出来的浮点数，必须四舍五入，
-            // 否则 tooltip 会出现 78.31578947368421 这种长串小数。
             label: (item) => {
               if (item.dataset.label === '实际') {
-                return `这一窗口结束时已用 ${Math.round(item.parsed.y)}%`;
+                return `已用 ${Math.round(item.parsed.y)}%`;
               }
               return `${item.dataset.label}: ${Math.round(item.parsed.y)}%`;
             },
@@ -1721,14 +1736,18 @@ async function syncPull(silent) {
     state.settings = { ...DEFAULT_SETTINGS, ...(merged.settings || {}) };
 
     // 云端数据合并进来后，输入卡的 draft 状态（上次值、当前窗口 ID 等）
-    // 是基于"旧 records"算的，已经过时了。这里在"用户没有正在编辑"的
-    // 前提下重算 draft，让调用方随后的 renderAll() 能看到最新的输入卡状态。
-    // 只改 state、不调 renderInputCard——渲染交给调用方的 renderAll() 一次到位。
+    // 是基于"旧 records"算的，已经过时了。重算 draft，让 renderAll() 看到最新状态。
+    // 如果用户正在编辑，但窗口已经变了（云端带来了新窗口的记录），也要强制刷新——
+    // 和 maybeRefreshDraft 同样的逻辑：旧窗口的编辑对新窗口没意义。
     const draftUntouched =
       state.draft5h === state.draftPrev5h &&
       state.draftWeekly === state.draftPrevWeekly;
     if (draftUntouched) {
       resetDraft();
+    } else {
+      const lastRecord = state.records[state.records.length - 1];
+      const windowChanged = !lastRecord || lastRecord.windowId !== state.draftWindowId;
+      if (windowChanged) resetDraft();
     }
 
     saveData();
@@ -2413,6 +2432,21 @@ function bindEvents() {
       showToast(e.target.checked ? '已暂停自动同步 ⏸' : '已恢复自动同步 ✨');
     });
   }
+
+  // 手机端：触摸图表外任意区域时，清除所有图表的选中态和 tooltip。
+  // 因为 Chart.js 用了 mode:'nearest' + intersect:false，在手机上
+  // 手指几乎点哪里都会吸附到最近的点，导致 tooltip 很难消掉。
+  // 这里监听 document 级别的 touchstart，如果触摸目标不是任何 canvas，
+  // 就主动把所有图表的 tooltip 和高亮清掉。
+  document.addEventListener('touchstart', (e) => {
+    if (e.target.tagName === 'CANVAS') return;
+    [rateChart, weeklyChart, windowChart].forEach(chart => {
+      if (!chart) return;
+      chart.setActiveElements([]);
+      chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+      chart.update('none');
+    });
+  }, { passive: true });
 }
 
 // 把 body 切到 .is-ready 状态，触发淡入和首屏入场动画。
