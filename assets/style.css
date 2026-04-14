@@ -825,7 +825,7 @@ body:not(.is-bars-armed) .ring-bar-fill {
 /* ============ 8. 中间一行：汇率卡 + 周曲线 ============ */
 .middle-row {
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 320px minmax(0, 1fr);
   gap: var(--gap-card);
   margin-bottom: var(--gap-card);
 }
@@ -952,6 +952,7 @@ body:not(.is-bars-armed) .ring-bar-fill {
 .weekly-chart-wrap {
   height: 320px;
   position: relative;
+  overflow: hidden; /* 防止 canvas 撑开容器，让 Chart.js 能正确向下 resize */
   /* 翻页时让旧图"淡出→重建→淡入"对称过渡，而不是瞬间消失 */
   transition: opacity 0.28s var(--ease-soft, ease);
 }
