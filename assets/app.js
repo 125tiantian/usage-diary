@@ -30,6 +30,18 @@ const DEFAULT_SETTINGS = {
   peakStartHour: 21,      // 北京时间 21 点
   peakEndHour: 3,         // 次日 3 点
   peakWeekdayOnly: true,  // 仅工作日
+  // 用户手动改"周重置日/时"那一刻的时间戳。一旦设置：
+  // - anchor 及之后的周都以 anchor 为起点按 7 天段切（新一周从改设置那一刻开始）
+  // - anchor 之前的历史周按 preAnchorDay/preAnchorHour 规则切（保持原样）
+  weekAnchor: null,
+  // 改 anchor 之前的"周几 + 整点"规则的快照。只用来算 anchor 之前的历史周。
+  // 没有历史改动的话这两个就是 null，逻辑全部走 weeklyResetDay / weeklyResetHour。
+  preAnchorDay: null,
+  preAnchorHour: null,
+  // 设置上次"真实"被修改的时间戳，用于云同步的版本判断。
+  // 只有设置内容真的改了才会更新（仅打开关掉面板不更新），
+  // 这样 pull 时才能正确判断"云端 vs 本地谁的设置更新"，不会被本地虚假的新时间戳覆盖。
+  lastModifiedAt: 0,
 };
 
 // 配色 —— 不写死，从 CSS 变量动态读取，主题切换时会重新刷新
@@ -110,27 +122,55 @@ function determineWindowId(ts, lastRecord) {
   return floorToHour(ts);
 }
 
-// 给定一个时间戳，判断属于哪一周（用上一次 weekly 重置的时间戳作为周 ID）
-function getWeekStart(ts, settings) {
+// 把"按星期几 + 整点"的规则算出 ts 所在那一周的起点。这是老逻辑，抽成独立函数
+// 方便 anchor 之前的历史周调用——那时候用的 day/hour 是改 anchor 之前的旧值。
+function getWeekStartByDayHour(ts, day, hour) {
   const d = new Date(ts);
-  const day = d.getDay();
-  const hour = d.getHours();
+  const wd = d.getDay();
+  const h = d.getHours();
 
-  let daysBack = (day - settings.weeklyResetDay + 7) % 7;
-  // 如果今天就是重置日，但还没到重置时间，那当前还属于上一周
-  if (daysBack === 0 && hour < settings.weeklyResetHour) {
+  let daysBack = (wd - day + 7) % 7;
+  if (daysBack === 0 && h < hour) {
     daysBack = 7;
   }
-
   const result = new Date(d);
   result.setDate(d.getDate() - daysBack);
-  result.setHours(settings.weeklyResetHour, 0, 0, 0);
+  result.setHours(hour, 0, 0, 0);
   return result.getTime();
 }
 
-// 当前周的结束时间
-function getWeekEnd(weekStart) {
-  return weekStart + 7 * ONE_DAY_MS;
+// 给定一个时间戳，判断属于哪一周。有 anchor 时分段算：
+// - anchor 及之后：以 anchor 为起点按 7 天段切（新一周从改设置那一刻开始）
+// - anchor 之前：按"改 anchor 之前"的旧 day/hour 规则切（保持历史周原来的样子）
+// 这样用户按 ◀ 翻回去看以前的周，还是按原来的星期几切，不会被新规则搅乱。
+function getWeekStart(ts, settings) {
+  const anchor = settings.weekAnchor;
+  if (anchor != null) {
+    if (ts >= anchor) {
+      const diff = ts - anchor;
+      const weeksSince = Math.floor(diff / (7 * ONE_DAY_MS));
+      return anchor + weeksSince * 7 * ONE_DAY_MS;
+    }
+    // 历史周：用 anchor 设立之前的 day/hour 切。如果没存旧值（比如老用户数据
+    // 里没 preAnchor 字段），兜底用当前 day/hour，至少不崩。
+    const oldDay = settings.preAnchorDay != null ? settings.preAnchorDay : settings.weeklyResetDay;
+    const oldHour = settings.preAnchorHour != null ? settings.preAnchorHour : settings.weeklyResetHour;
+    return getWeekStartByDayHour(ts, oldDay, oldHour);
+  }
+  return getWeekStartByDayHour(ts, settings.weeklyResetDay, settings.weeklyResetHour);
+}
+
+// 当前周的结束时间。一般就是 weekStart + 7 天，但有两种例外：
+// - 如果这一周完全在 anchor 之前（weekStart + 7d <= anchor）：正常 +7 天
+// - 如果这一周跨过了 anchor（weekStart < anchor < weekStart + 7d）：end 被 anchor 截断
+//   这样历史周的最后一周不会穿到 anchor 之后的"新一周"里
+function getWeekEnd(weekStart, settings) {
+  const raw = weekStart + 7 * ONE_DAY_MS;
+  if (settings && settings.weekAnchor != null) {
+    const anchor = settings.weekAnchor;
+    if (weekStart < anchor && raw > anchor) return anchor;
+  }
+  return raw;
 }
 
 // 把"距下次重置的毫秒数"格式化成一句治愈风的短文案：
@@ -156,7 +196,7 @@ function formatRemainingUntilReset(ms) {
 function getLastRecordThisWeek(records, settings) {
   if (!records || records.length === 0) return null;
   const weekStart = getWeekStart(Date.now(), settings);
-  const weekEnd = getWeekEnd(weekStart);
+  const weekEnd = getWeekEnd(weekStart, settings);
   for (let i = records.length - 1; i >= 0; i--) {
     const r = records[i];
     if (r.timestamp >= weekStart && r.timestamp < weekEnd) {
@@ -451,6 +491,10 @@ function addRecord(fiveH, weekly, noteText) {
   }
 
   state.records.push(record);
+  // 记一笔之后自动把历史视图选中跟到这条记录所在的窗口。
+  // 主要是为了解决"时间推进开了新窗口、但历史卡还停在上个窗口"的体感割裂——
+  // 用户刚记的这一笔一般就是他最想看的，让视图跟过去更自然
+  state.selectedHistoryWindowId = windowId;
   saveData();
 }
 
@@ -492,7 +536,7 @@ function renderTopbar() {
   $('#today-date').textContent = dateStr;
 
   const weekStart = getWeekStart(now.getTime(), state.settings);
-  const weekEnd = getWeekEnd(weekStart);
+  const weekEnd = getWeekEnd(weekStart, state.settings);
   const remainingMs = weekEnd - now.getTime();
   $('#weekly-reset-info').textContent = `weekly · ${formatRemainingUntilReset(remainingMs)}`;
 }
@@ -533,7 +577,7 @@ function renderStatusCards() {
   $('#status-weekly-bar').style.width = `${weeklyVal}%`;
 
   const weekStart = getWeekStart(Date.now(), state.settings);
-  const weekEnd = getWeekEnd(weekStart);
+  const weekEnd = getWeekEnd(weekStart, state.settings);
   const totalWeekMs = weekEnd - weekStart;
   const elapsedMs = Date.now() - weekStart;
   const idealPct = Math.min(100, Math.round((elapsedMs / totalWeekMs) * 100));
@@ -786,7 +830,7 @@ function renderWeeklyChart(mode = 'update') {
   const now = Date.now();
   const currentWeekStart = getWeekStart(now, state.settings);
   const weekStart = state.selectedWeekStart != null ? state.selectedWeekStart : currentWeekStart;
-  const weekEnd = getWeekEnd(weekStart);
+  const weekEnd = getWeekEnd(weekStart, state.settings);
   const isCurrentWeek = weekStart === currentWeekStart;
 
   // 更新导航标题
@@ -837,9 +881,15 @@ function renderWeeklyChart(mode = 'update') {
     .filter(Boolean);
 
   // 理想匀速线：从 (weekStart, 0) 到 (weekEnd, 100)
+  // 特殊情况：跨 anchor 的历史周 weekEnd 被截短了（不到 7 天），
+  // 如果还画到 100%，这条线会比其他周斜得多，看起来像"5 天就该烧完"。
+  // 按"实际占满一周的比例"缩放终点 y，斜率就和完整周一致了——
+  // 视觉上就是同样的 45°，只是这条被 anchor 提前截停了，符合"残缺周"的真实情况。
+  const fullWeekMs = 7 * ONE_DAY_MS;
+  const idealEndY = 100 * (weekEnd - weekStart) / fullWeekMs;
   const idealPoints = [
     { x: weekStart, y: 0 },
-    { x: weekEnd, y: 100 },
+    { x: weekEnd, y: idealEndY },
   ];
 
   // 预测延伸线：仅当前周才显示预测
@@ -1022,7 +1072,19 @@ function renderWeeklyChart(mode = 'update') {
         },
       },
     },
-  }, { duration: 1500, stagger: 70, pointCount: actualPoints.length });
+  }, {
+    duration: 1500,
+    stagger: 70,
+    pointCount: actualPoints.length,
+    // 预测那条虚线（datasetIndex = 1）是从实际线末尾延伸出去的。
+    // 如果也按 dataIndex × stagger 延迟，就只有 0 和 1 倍 stagger 两步，
+    // 几乎瞬间画完——点还没上来线就已经在那了，体感像"抢跑"。
+    // 让它等到实际线都画完再慢慢接上：延迟 = 实际线走完的时间 + 一点点余量。
+    datasetDelay: (realStagger) => {
+      const lastActualDelay = Math.max(0, (actualPoints.length - 1) * realStagger);
+      return { 1: lastActualDelay + 400 };
+    },
+  });
 }
 
 /* =================================================
@@ -1360,12 +1422,52 @@ function calibrateCurrentWindow() {
 }
 
 function closeSettings() {
-  // 读取设置
+  // 读取设置。先把旧值全部快照下来，用于判断"是不是真的改了"以及"哪部分改了"。
+  const oldDay = state.settings.weeklyResetDay;
+  const oldHour = state.settings.weeklyResetHour;
+  const oldPeakStart = state.settings.peakStartHour;
+  const oldPeakEnd = state.settings.peakEndHour;
+  const oldPeakWeekdayOnly = state.settings.peakWeekdayOnly;
   state.settings.weeklyResetDay = parseInt($('#setting-weekly-day').value, 10);
   state.settings.weeklyResetHour = parseInt($('#setting-weekly-hour').value, 10);
   state.settings.peakStartHour = parseInt($('#setting-peak-start').value, 10);
   state.settings.peakEndHour = parseInt($('#setting-peak-end').value, 10);
   state.settings.peakWeekdayOnly = $('#setting-peak-weekday').checked;
+
+  // 任意字段真改了 → 更新 settings 的"最后修改时刻"。这是云同步版本判断用的，
+  // 不真改就不更新——避免仅仅打开关掉设置面板也让云端更新的 settings 被本地覆盖。
+  const anySettingChanged =
+    state.settings.weeklyResetDay !== oldDay ||
+    state.settings.weeklyResetHour !== oldHour ||
+    state.settings.peakStartHour !== oldPeakStart ||
+    state.settings.peakEndHour !== oldPeakEnd ||
+    state.settings.peakWeekdayOnly !== oldPeakWeekdayOnly;
+  if (anySettingChanged) {
+    state.settings.lastModifiedAt = Date.now();
+  }
+
+  // 用户真的改了周起点（day 或 hour）→ 钉一个 anchor：
+  // 从这一刻起就是"新一周"，之前的记录自动归入上一周。
+  // 高峰设置和周起点无关，所以改高峰时不触发。
+  const weeklyChanged =
+    state.settings.weeklyResetDay !== oldDay ||
+    state.settings.weeklyResetHour !== oldHour;
+  if (weeklyChanged) {
+    // 先把"改之前那套规则"快照下来，留给 anchor 之前的历史周用——
+    // 如果 settings 里本来就有 preAnchor（说明之前也改过），保留原始的
+    // 那次初始 preAnchor 没必要再覆盖；但为了避免多次改后规则链断裂，
+    // 每次改都按"改前的那一刻的 day/hour"更新 preAnchor。
+    // 这意味着如果用户连续改了两次，中间那段用的是第二次改之前的规则，
+    // 第一次改之前的更老规则会丢——这个是克克刻意取的简化（避免完整规则链）。
+    state.settings.preAnchorDay = oldDay;
+    state.settings.preAnchorHour = oldHour;
+    state.settings.weekAnchor = Date.now();
+    // 周起点变了，"正在看的是哪一周"这个选中状态也失效——重置回"本周"
+    state.selectedWeekStart = null;
+    // 输入卡的 prevWeekly / isNewWeek 需要立刻按新规则重算，
+    // 不然保存完面板关闭后还会显示改设置前的"上次值"
+    resetDraft();
+  }
   saveData();
 
   // 关闭动画：加 .is-closing 触发遮罩淡出 + 弹层下滑，
@@ -1521,14 +1623,17 @@ function syncHeaders(key) {
   };
 }
 
-// 构造推到云端的 payload：包含数据本身 + 一个 syncMeta 用于冲突判断
+// 构造推到云端的 payload：包含数据本身 + 一个 syncMeta 用于冲突判断。
+// lastModified 用 settings 的真实修改时刻（settings.lastModifiedAt），
+// 而不是"推送这一刻"——后者会让没改过设置的设备在 push/pull 时显得"永远最新"，
+// 从而把云端真正较新的 settings 覆盖掉。只有真改设置，版本号才前进。
 function buildSyncPayload(source) {
   return {
     records: state.records,
     notes: state.notes,
     settings: state.settings,
     syncMeta: {
-      lastModified: Date.now(),
+      lastModified: state.settings.lastModifiedAt || 0,
       source: source || 'push',
     },
   };
@@ -1727,7 +1832,9 @@ async function syncPull(silent) {
       records: state.records,
       notes: state.notes,
       settings: state.settings,
-      syncMeta: { lastModified: Date.now(), source: 'local' },
+      // 关键：用本地 settings 的真实修改时刻，而不是 Date.now()。
+      // 用后者的话本地版本号"永远最新"，云端的 settings 永远拉不下来。
+      syncMeta: { lastModified: state.settings.lastModifiedAt || 0, source: 'local' },
     };
     const merged = mergeSyncData(remote, local);
 
@@ -2065,19 +2172,44 @@ function chartAnimation(opts = {}) {
   const requestedStagger = opts.stagger || 55;
   const maxTotal = opts.maxTotal || 2500;
   const pointCount = opts.pointCount || 0;
+  // datasetDelay：按 datasetIndex 给额外的起始延迟。
+  // 比如 weekly 图里预测那条虚线要等"实际线画完"才出现——就给它传一个
+  // 大于实际线动画总时长的起始延迟，让它在后面慢慢接上来，不再抢跑。
+  // 支持传函数：函数收到压缩后的真实 stagger，方便按"实际线点数 × stagger"来算延迟。
   let stagger = requestedStagger;
   if (pointCount > 1) {
     const maxStagger = Math.max(0, (maxTotal - duration) / (pointCount - 1));
     stagger = Math.min(requestedStagger, maxStagger);
   }
+  const datasetDelay = typeof opts.datasetDelay === 'function'
+    ? opts.datasetDelay(stagger)
+    : (opts.datasetDelay || null);
   return {
     duration,
     easing: 'easeOutQuart',
     delay: (context) => {
       if (context.type === 'data' && context.mode === 'default') {
-        return context.dataIndex * stagger;
+        const base = datasetDelay && datasetDelay[context.datasetIndex] != null
+          ? datasetDelay[context.datasetIndex]
+          : 0;
+        return base + context.dataIndex * stagger;
       }
       return 0;
+    },
+    // 入场动画跑完之后切到"稳态动画"——不带 delay、duration 也短。
+    // 不这么做的话，之后 hover 触发的内部 update 也会走同一套 delay 配置，
+    // 所有点被 Chart.js 拽回起点等着"重新出场"，视觉上表现为
+    // "一 hover 所有点全跑到最底下不动了"。
+    // $steadyAnim 标记让这个切换只发生一次，之后所有更新都平滑进行。
+    onComplete: (ctx) => {
+      const chart = ctx.chart;
+      if (!chart.$steadyAnim) {
+        chart.$steadyAnim = true;
+        chart.options.animation = {
+          duration: 400,
+          easing: 'easeOutQuart',
+        };
+      }
     },
   };
 }
@@ -2352,7 +2484,10 @@ function bindEvents() {
       const now = Date.now();
       const currentWeekStart = getWeekStart(now, state.settings);
       const viewing = state.selectedWeekStart != null ? state.selectedWeekStart : currentWeekStart;
-      state.selectedWeekStart = viewing - 7 * ONE_DAY_MS;
+      // 不是简单减 7 天——而是让 getWeekStart 把 "viewing 前一刻" 规范化到
+      // 它实际所属的那一周。这样跨 anchor 往回翻时会自动落到按旧规则切的 weekStart，
+      // 不会得到一个"自制的 weekStart"（比如 anchor - 7 天这种不对齐整点的值）。
+      state.selectedWeekStart = getWeekStart(viewing - 1, state.settings);
       renderWeeklyChart('rebuild');
     });
   });
@@ -2361,7 +2496,9 @@ function bindEvents() {
       const now = Date.now();
       const currentWeekStart = getWeekStart(now, state.settings);
       const viewing = state.selectedWeekStart != null ? state.selectedWeekStart : currentWeekStart;
-      const next = viewing + 7 * ONE_DAY_MS;
+      // 同上：用 getWeekStart 规范化到"下一周"真正的 weekStart，
+      // 跨 anchor 往前翻时自动落到 anchor（新规则的第一周起点）
+      const next = getWeekStart(viewing + 7 * ONE_DAY_MS, state.settings);
       if (next >= currentWeekStart) {
         state.selectedWeekStart = null; // 回到当前周
       } else {
