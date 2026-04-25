@@ -266,6 +266,30 @@
           <button class="nav-btn" id="next-window-btn">▶</button>
         </div>
 
+        <div class="adjust-row">
+          <button class="text-btn text-btn--ghost adjust-toggle-btn" id="adjust-toggle-btn" hidden>✏️ 调起点</button>
+        </div>
+
+        <div class="adjust-panel" id="adjust-panel">
+          <div class="adjust-panel-inner">
+            <div class="adjust-hint" id="adjust-hint">—</div>
+            <div class="adjust-inputs">
+              <label class="adjust-label">
+                <span>日期</span>
+                <input type="date" id="adjust-date">
+              </label>
+              <label class="adjust-label">
+                <span>时</span>
+                <input type="number" id="adjust-hour" min="0" max="23">
+              </label>
+            </div>
+            <div class="adjust-actions">
+              <button class="text-btn text-btn--ghost" id="adjust-cancel-btn">取消</button>
+              <button class="text-btn text-btn--primary" id="adjust-confirm-btn">确认 ✨</button>
+            </div>
+          </div>
+        </div>
+
         <div class="window-chart-wrap">
           <canvas id="window-chart"></canvas>
         </div>
@@ -298,163 +322,191 @@
 
       <div class="modal-body">
 
-        <!-- ==================== 第一大块：时间相关 ==================== -->
-        <div class="settings-section">
-          <div class="settings-section-head">
-            <h3 class="settings-section-title">⏰ 时间相关</h3>
-            <p class="settings-section-sub">App 怎么理解一周、5h 窗口和高峰时段</p>
+        <!-- 1. 云同步状态 + 操作 -->
+        <div class="settings-card sync-card">
+          <div class="sync-status-box" id="sync-status-box">
+            <span class="sync-status-dot"></span>
+            <span class="sync-status-text" id="sync-status-text">未配置</span>
           </div>
-
-          <div class="settings-group">
-            <h4 class="settings-group-title">Weekly 重置</h4>
-            <div class="settings-row">
-              <label>每周
-                <select id="setting-weekly-day">
-                  <option value="0">日</option>
-                  <option value="1">一</option>
-                  <option value="2">二</option>
-                  <option value="3">三</option>
-                  <option value="4">四</option>
-                  <option value="5">五</option>
-                  <option value="6" selected>六</option>
-                </select>
-              </label>
-              <label>
-                <input type="number" id="setting-weekly-hour" min="0" max="23" value="18">
-                点重置
-              </label>
-            </div>
-          </div>
-
-          <div class="settings-group">
-            <h4 class="settings-group-title">5h 窗口校准</h4>
-            <div class="calibrate-info" id="calibrate-info">—</div>
-            <div class="settings-row">
-              <label>
-                把起点挪到
-                <input type="number" id="setting-calibrate-hour" min="0" max="23" disabled>
-                点
-              </label>
-              <button class="text-btn" id="calibrate-btn" disabled>校准</button>
-            </div>
-            <div class="settings-hint">
-              比如 Claude 的 5h 窗口其实 5 点就开始了，但你 6 点才来记录——可以把起点手动挪回去。挪动后窗口仍然是 5 小时长，只是起点变了。
-            </div>
-          </div>
-
-          <div class="settings-group">
-            <h4 class="settings-group-title">高峰时段（北京时间）</h4>
-            <div class="settings-row">
-              <label>
-                <input type="number" id="setting-peak-start" min="0" max="23" value="21">
-                点 ~
-              </label>
-              <label>
-                <input type="number" id="setting-peak-end" min="0" max="23" value="3">
-                点
-              </label>
-            </div>
-            <div class="settings-row">
-              <label>
-                <input type="checkbox" id="setting-peak-weekday" checked>
-                仅工作日
-              </label>
-            </div>
-            <div class="settings-hint">默认是 Anthropic 公告里的"工作日 1pm-7pm GMT"换算成北京时间</div>
+          <div class="sync-actions">
+            <button class="text-btn text-btn--primary" id="sync-pull-btn">⬇️ 立即拉取</button>
+            <button class="text-btn text-btn--primary" id="sync-push-btn">⬆️ 立即推送</button>
+            <button class="text-btn text-btn--ghost" id="sync-export-btn">📋 复制配置</button>
           </div>
         </div>
 
-        <!-- ==================== 第二大块：数据与备份 ==================== -->
-        <div class="settings-section">
-          <div class="settings-section-head">
-            <h3 class="settings-section-title">💾 数据与备份</h3>
-            <p class="settings-section-sub">本地导出导入、云端同步、危险操作都在这里</p>
+        <!-- 2. 这周的起点 -->
+        <div class="settings-card reset-card">
+          <div class="settings-card-head">
+            <span class="settings-card-icon">📅</span>
+            <span class="settings-card-title">这周的起点</span>
           </div>
 
-          <!-- ===== 子区 A：本地备份 ===== -->
-          <div class="settings-group">
-            <h4 class="settings-group-title">本地备份</h4>
-            <div class="settings-row settings-btn-row">
-              <button class="text-btn" id="export-btn">📤 导出 JSON 备份</button>
-              <button class="text-btn" id="import-btn">📥 导入 JSON</button>
-              <input type="file" id="import-file" accept=".json" hidden>
+          <div class="reset-stat">
+            <div class="stat-line">
+              <span class="stat-key">每周重置</span>
+              <span class="stat-val" id="reset-stat-day">—</span>
             </div>
-            <div class="settings-hint">建议偶尔导出一份 JSON 存到本地或 U 盘，云同步只是辅助，本地备份最稳。</div>
+            <div class="stat-bottom" id="reset-stat-time">—</div>
           </div>
 
-          <!-- ===== 子区 B：云端同步 ===== -->
-          <div class="settings-group">
-            <h4 class="settings-group-title">云端同步（jsonbin）</h4>
-
-            <!-- 状态条放最顶部，进入这块第一眼就能看到当前状态 -->
-            <div class="sync-status-box" id="sync-status-box">
-              <span class="sync-status-dot"></span>
-              <span class="sync-status-text" id="sync-status-text">未配置</span>
-            </div>
-
-            <div class="sync-hint">
-              用
-              <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a>
-              的免费服务在手机和 PC 之间同步数据。Key 只存在你自己的浏览器里，不会泄露。
-            </div>
-
-            <div class="settings-row sync-field-row">
-              <label class="sync-field-label">Master Key</label>
-              <input type="password" id="sync-master-key" placeholder="从 jsonbin.io 的 API Keys 复制" autocomplete="off" spellcheck="false">
-            </div>
-
-            <div class="settings-row sync-field-row">
-              <label class="sync-field-label">Bin ID</label>
-              <input type="text" id="sync-bin-id" placeholder="留空点'初始化'会自动创建" autocomplete="off" spellcheck="false">
-            </div>
-
-            <!-- 主操作组：日常会用的三个按钮 -->
-            <div class="settings-row settings-btn-row settings-btn-row--primary">
-              <button class="text-btn text-btn--primary" id="sync-init-btn">🪄 初始化云同步</button>
-              <button class="text-btn text-btn--primary" id="sync-pull-btn">⬇️ 立即拉取</button>
-              <button class="text-btn text-btn--primary" id="sync-push-btn">⬆️ 立即推送</button>
-            </div>
-
-            <!-- 次要操作组：跨设备配置传递，视觉权重降低 -->
-            <div class="settings-row settings-btn-row settings-btn-row--secondary">
-              <button class="text-btn text-btn--ghost" id="sync-export-btn">📋 复制同步配置</button>
-              <button class="text-btn text-btn--ghost" id="sync-import-btn">📎 从配置字符串导入</button>
-            </div>
-
-            <!-- 暂停开关 -->
-            <div class="settings-row sync-pause-row">
-              <label class="sync-pause-toggle">
-                <input type="checkbox" id="sync-pause-toggle">
-                <span class="sync-pause-label">⏸ 暂停自动同步（调试用）</span>
-              </label>
-              <div class="sync-pause-hint">开启后不会在刷新和保存时自动同步，但上面的"立即拉取 / 立即推送"按钮仍然可用。</div>
-            </div>
-
-            <div class="settings-hint">
-              第一次用：去 <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a> 注册账号，复制 Master Key 粘到上面点"初始化"。第二个设备用"从配置字符串导入"能一键搞定。
+          <div class="foldable">
+            <button class="fold-toggle" data-fold>
+              <span class="fold-arrow">▶</span> 改重置时间
+            </button>
+            <div class="fold-body">
+              <div class="fold-inner">
+                <div class="form-row">
+                  <label>每周
+                    <select id="setting-weekly-day">
+                      <option value="0">日</option>
+                      <option value="1">一</option>
+                      <option value="2">二</option>
+                      <option value="3">三</option>
+                      <option value="4">四</option>
+                      <option value="5">五</option>
+                      <option value="6" selected>六</option>
+                    </select>
+                  </label>
+                  <label>
+                    <input type="number" id="setting-weekly-hour" min="0" max="23" value="18">
+                    点重置
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
 
-          <!-- ===== 子区 C：危险区 ===== -->
-          <div class="settings-group settings-group--danger">
-            <h4 class="settings-group-title settings-group-title--danger">⚠️ 危险区</h4>
-            <p class="settings-danger-sub">这里的操作不可逆，按之前请确认你已经做好备份。</p>
-            <div class="settings-row settings-btn-row">
-              <button class="text-btn text-btn--danger" id="sync-clear-btn">🚫 解除云同步</button>
-              <button class="text-btn text-btn--danger" id="clear-btn">🗑️ 清空所有数据</button>
+          <hr class="settings-divider">
+
+          <div class="reset-row">
+            <div class="reset-row-text">
+              <div class="reset-row-title">刚被官方刷过额度？</div>
+              <div class="reset-row-sub">以前的记录都不动，从这一刻重新计</div>
+            </div>
+            <button class="text-btn text-btn--accent" id="weekly-anchor-now-btn">重置</button>
+          </div>
+        </div>
+
+        <!-- 3. 数据备份 -->
+        <div class="settings-card">
+          <div class="settings-card-head">
+            <span class="settings-card-icon">💾</span>
+            <span class="settings-card-title">数据备份</span>
+          </div>
+          <div class="settings-btn-row">
+            <button class="text-btn" id="export-btn">📤 导出 JSON</button>
+            <button class="text-btn" id="import-btn">📥 导入 JSON</button>
+            <input type="file" id="import-file" accept=".json" hidden>
+          </div>
+          <div class="settings-hint-line">偶尔导一份到本地做个保险～云同步只是辅助</div>
+        </div>
+
+        <!-- 4. 高峰时段（按官方内置 · DST 自动切） -->
+        <div class="settings-card peak-card">
+          <div class="settings-card-head">
+            <span class="settings-card-icon">🌙</span>
+            <span class="settings-card-title">高峰时段</span>
+            <span class="settings-meta-chip">Anthropic 官方</span>
+          </div>
+
+          <div class="peak-display">
+            <span class="peak-text" id="peak-text">—</span>
+            <span class="peak-tag">工作日 · 北京时间</span>
+          </div>
+
+          <div class="info-quote">
+            <div class="info-quote-cn">
+              高峰期间，<b>5h session 比平时消耗更快</b>；weekly 额度不受影响。
+            </div>
+            <div class="info-quote-dst" id="peak-dst-line">—</div>
+          </div>
+        </div>
+
+        <!-- 5. 同步配置（默认折叠 - 已配置时收起） -->
+        <div class="settings-card config-card">
+          <div class="settings-card-head">
+            <span class="settings-card-icon">☁️</span>
+            <span class="settings-card-title">同步配置</span>
+            <span class="settings-card-meta" id="config-status-meta">未配置</span>
+          </div>
+
+          <div class="config-summary" id="config-summary">
+            Master Key <code id="config-mk-hint">—</code><br>
+            Bin ID <code id="config-bin-hint">—</code>
+          </div>
+
+          <div class="foldable" id="config-foldable">
+            <button class="fold-toggle" data-fold>
+              <span class="fold-arrow">▶</span> 改密钥 / 重新配置
+            </button>
+            <div class="fold-body">
+              <div class="fold-inner">
+                <div class="form-field">
+                  <label class="form-field-label">Master Key</label>
+                  <input type="password" id="sync-master-key" placeholder="从 jsonbin.io 的 API Keys 复制" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="form-field">
+                  <label class="form-field-label">Bin ID</label>
+                  <input type="text" id="sync-bin-id" placeholder="留空点初始化会自动创建" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="settings-btn-row">
+                  <button class="text-btn text-btn--primary" id="sync-init-btn">🪄 初始化云同步</button>
+                  <button class="text-btn text-btn--ghost" id="sync-import-btn">📎 从配置字符串导入</button>
+                </div>
+                <div class="settings-hint-line" style="margin-top:14px;">
+                  第一次用：去 <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a> 注册账号、复制 Master Key 粘上面、点初始化即可
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- ==================== 第三大块：关于 ==================== -->
-        <div class="settings-section settings-section--about">
-          <div class="settings-section-head">
-            <h3 class="settings-section-title">ℹ️ 关于</h3>
+        <!-- 6. 更多（默认折叠） -->
+        <div class="settings-card more-card">
+          <div class="foldable">
+            <button class="fold-toggle" data-fold>
+              <span class="fold-arrow">▶</span> 更多 · 暂停 / 解除 / 清空
+            </button>
+            <div class="fold-body">
+              <div class="fold-inner">
+                <div class="more-list">
+                  <div class="more-item">
+                    <div>
+                      <div class="more-item-text">⏸ 暂停自动同步</div>
+                      <div class="more-item-sub">开启后不会在刷新和保存时自动同步</div>
+                    </div>
+                    <label class="settings-switch">
+                      <input type="checkbox" id="sync-pause-toggle">
+                      <span class="settings-switch-track"></span>
+                    </label>
+                  </div>
+
+                  <div class="more-item">
+                    <div>
+                      <div class="more-item-text">解除云同步</div>
+                      <div class="more-item-sub">本地数据保留，仅断开和云端的连接</div>
+                    </div>
+                    <button class="text-btn text-btn--ghost-warn" id="sync-clear-btn">🚫 解除</button>
+                  </div>
+
+                  <div class="more-item">
+                    <div>
+                      <div class="more-item-text">清空所有数据</div>
+                      <div class="more-item-sub">不可逆 · 记录、备注、设置都会被清掉</div>
+                    </div>
+                    <button class="text-btn text-btn--ghost-warn" id="clear-btn">🗑️ 清空</button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="settings-hint">
-            额度小日记 · 一个用来缓解 Claude 额度焦虑的小手账。
-            <br>数据默认存在你的浏览器本地（localStorage），配置云同步后会自动备份到 jsonbin.io。
-          </div>
+        </div>
+
+        <!-- Footer：关于 -->
+        <div class="settings-footer">
+          额度小日记 · 缓解 Claude 额度焦虑的小手账<br>
+          数据存在你的浏览器本地，配了云同步会自动备份到 jsonbin.io
         </div>
 
       </div>

@@ -1021,6 +1021,88 @@ body:not(.is-bars-armed) .ring-bar-fill {
   text-align: center;
 }
 
+.adjust-row {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+
+.adjust-toggle-btn {
+  font-size: 12px;
+  padding: 6px 12px;
+}
+
+.adjust-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-bottom: 0;
+  transition:
+    grid-template-rows 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.42s cubic-bezier(0.4, 0, 0.2, 1),
+    margin-bottom 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.adjust-panel.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-bottom: 14px;
+}
+
+.adjust-panel-inner {
+  overflow: hidden;
+  min-height: 0;
+  background: var(--c-5h-soft);
+  border-radius: var(--radius-btn);
+  padding: 14px 14px 12px;
+}
+
+.adjust-hint {
+  font-size: 12.5px;
+  color: var(--c-5h-deep);
+  font-weight: 600;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.adjust-inputs {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.adjust-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.adjust-label input[type="date"],
+.adjust-label input[type="number"] {
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--c-divider);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.adjust-label input[type="number"] {
+  width: 60px;
+  text-align: center;
+}
+
+.adjust-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
 .window-chart-wrap {
   height: 240px;
   position: relative;
@@ -2260,4 +2342,449 @@ body.is-ready .input-card {
   .stepper-row {
     gap: 3px;
   }
+}
+
+/* ============ 13. 设置面板（重设计 · 卡片式） ============ */
+
+.settings-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-sub);
+  padding: 18px 20px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+/* 设置 modal 用奶油底，让里面的白色小卡靠 shadow 自然浮起来，跟主页"奶油背景 + 白卡"语言一致 */
+#settings-modal .modal {
+  background: var(--bg-soft);
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.settings-card-icon {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.settings-card-title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+}
+
+.settings-card-meta {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-mute);
+}
+
+.settings-meta-chip {
+  margin-left: auto;
+  font-size: 11px;
+  background: var(--c-rate-soft);
+  color: var(--c-rate-deep);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.settings-divider {
+  height: 1px;
+  background: var(--c-divider);
+  margin: 14px 0;
+  border: none;
+}
+
+.settings-hint-line {
+  font-size: 12px;
+  color: var(--text-mute);
+  line-height: 1.6;
+  margin-top: 10px;
+}
+
+.settings-footer {
+  text-align: center;
+  margin: 24px 0 0;
+  padding: 14px 8px 0;
+  color: var(--text-mute);
+  font-size: 11.5px;
+  line-height: 1.7;
+  border-top: 1px solid var(--c-divider);
+}
+
+/* sync-card：状态条 + 操作行 */
+.sync-card {
+  background: linear-gradient(135deg, var(--c-weekly-soft) 0%, var(--bg-card) 70%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-color: transparent;
+}
+
+.sync-card .sync-status-box {
+  margin: 0;
+}
+
+.sync-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* reset-card */
+.reset-stat {
+  background: var(--bg-soft);
+  border-radius: var(--radius-btn);
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+
+.stat-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.stat-key {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.stat-val {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-bottom {
+  margin-top: 5px;
+  font-size: 12.5px;
+  color: var(--text-mute);
+}
+
+.reset-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+}
+
+.reset-row-text { flex: 1; }
+
+.reset-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.reset-row-sub {
+  font-size: 12px;
+  color: var(--text-mute);
+  line-height: 1.5;
+}
+
+/* peak-card */
+.peak-display {
+  background: var(--bg-soft);
+  border-radius: var(--radius-btn);
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.peak-text {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--c-5h-deep);
+}
+
+.peak-tag {
+  font-size: 11.5px;
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.info-quote {
+  margin-top: 12px;
+  padding: 11px 14px;
+  background: var(--bg-soft);
+  border-left: 3px solid var(--c-rate);
+  border-radius: 8px;
+}
+
+.info-quote-cn {
+  font-size: 12.8px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.info-quote-cn b {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.info-quote-dst {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-mute);
+  line-height: 1.55;
+}
+
+.info-quote-dst b {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+/* config-card */
+.config-summary {
+  background: var(--bg-soft);
+  border-radius: var(--radius-btn);
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.config-summary code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: var(--overlay-mid);
+  padding: 1px 6px;
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+
+/* 折叠展开（grid 方案 · 真贴合内容、ease-in-out 缓动） */
+.foldable {
+  margin-top: 12px;
+}
+
+.fold-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.fold-toggle:hover {
+  color: var(--text-primary);
+}
+
+.fold-arrow {
+  display: inline-block;
+  transition: transform 0.3s var(--ease-soft);
+  font-size: 11px;
+}
+
+.foldable.is-open .fold-arrow {
+  transform: rotate(90deg);
+}
+
+.fold-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.42s cubic-bezier(0.4, 0, 0.2, 1),
+    margin-top 0.42s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.fold-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.foldable.is-open .fold-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-top: 8px;
+}
+
+/* 表单（form-row 已存在；form-field 是新的） */
+.form-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.form-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.form-row input[type="number"] {
+  width: 64px;
+  text-align: center;
+  background: var(--bg-soft);
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+  outline: none;
+}
+
+.form-row select {
+  background: var(--bg-soft);
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  outline: none;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.form-field-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  letter-spacing: 0.3px;
+}
+
+.form-field input {
+  background: var(--bg-soft);
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  width: 100%;
+  border: none;
+  font-family: inherit;
+  outline: none;
+}
+
+/* 按钮新变体：accent（蜜桃橘）、ghost-warn（暖红描边） */
+.text-btn--accent {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+  font-weight: 600;
+}
+
+.text-btn--accent:hover {
+  background: var(--c-5h-soft-deep);
+  color: var(--c-5h-deep);
+}
+
+.text-btn--ghost-warn {
+  background: transparent;
+  border: 1px solid rgba(232, 156, 126, 0.4);
+  color: var(--c-warn);
+}
+
+.text-btn--ghost-warn:hover {
+  background: rgba(232, 156, 126, 0.12);
+  color: var(--c-warn);
+}
+
+/* more-card */
+.more-card {
+  padding: 14px 20px;
+}
+
+.more-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.more-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--c-divider);
+  gap: 14px;
+}
+
+.more-item:last-child {
+  border-bottom: none;
+}
+
+.more-item-text {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.more-item-sub {
+  font-size: 11.5px;
+  color: var(--text-mute);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+
+/* iOS 风开关 */
+.settings-switch {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.settings-switch input {
+  display: none;
+}
+
+.settings-switch-track {
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--c-divider);
+  position: relative;
+  transition: background 0.25s var(--ease-soft);
+}
+
+.settings-switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.25s var(--ease-bounce);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+}
+
+.settings-switch input:checked + .settings-switch-track {
+  background: var(--c-weekly-deep);
+}
+
+.settings-switch input:checked + .settings-switch-track::after {
+  transform: translateX(16px);
 }

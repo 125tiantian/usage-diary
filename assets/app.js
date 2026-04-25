@@ -114,6 +114,15 @@ function floorToHour(ts) {
   return d.getTime();
 }
 
+// 已经在整点就不动，否则向上取到下一个整点
+function ceilToHour(ts) {
+  const d = new Date(ts);
+  if (d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0) return ts;
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + 1);
+  return d.getTime();
+}
+
 // 给定一个时间戳和上一条记录，判断它属于哪个 5h 窗口
 function determineWindowId(ts, lastRecord) {
   if (!lastRecord) return floorToHour(ts);
@@ -206,13 +215,33 @@ function getLastRecordThisWeek(records, settings) {
   return null;
 }
 
-// 判断某个时间戳是不是高峰时段
-function isPeakHour(ts, settings) {
+// 美国 DST：3 月第 2 个周日 ~ 11 月第 1 个周日
+function getUSDSTBounds(year) {
+  const mar1 = new Date(year, 2, 1);
+  const start = new Date(year, 2, 1 + ((7 - mar1.getDay()) % 7) + 7);
+  const nov1 = new Date(year, 10, 1);
+  const end = new Date(year, 10, 1 + ((7 - nov1.getDay()) % 7));
+  return { start, end };
+}
+
+function isUSinDST(d) {
+  const dt = d || new Date();
+  const { start, end } = getUSDSTBounds(dt.getFullYear());
+  return dt >= start && dt < end;
+}
+
+// 高峰时段：按 Anthropic 官方公告内置，跟着美国 DST 自动切
+// 夏令时北京 20-02、冬令时北京 21-03，永远仅工作日
+function getPeakBand(d) {
+  const dst = isUSinDST(d);
+  return { start: dst ? 20 : 21, end: dst ? 2 : 3 };
+}
+
+function isPeakHour(ts) {
   const d = new Date(ts);
+  const { start, end } = getPeakBand(d);
   const day = d.getDay();
   const hour = d.getHours();
-  const start = settings.peakStartHour;
-  const end = settings.peakEndHour;
 
   let inWindow = false;
   let weekdayToCheck = day;
@@ -220,17 +249,17 @@ function isPeakHour(ts, settings) {
   if (start < end) {
     inWindow = hour >= start && hour < end;
   } else {
-    // 跨午夜
+    // 跨午夜：start 到 24 算今天、0 到 end 算昨天延续
     if (hour >= start) {
       inWindow = true;
     } else if (hour < end) {
       inWindow = true;
-      weekdayToCheck = (day + 6) % 7;  // 算到前一天
+      weekdayToCheck = (day + 6) % 7;
     }
   }
 
   if (!inWindow) return false;
-  if (settings.peakWeekdayOnly && (weekdayToCheck === 0 || weekdayToCheck === 6)) return false;
+  if (weekdayToCheck === 0 || weekdayToCheck === 6) return false;
   return true;
 }
 
@@ -256,6 +285,28 @@ function computeWindows(records) {
     w.maxValue = Math.max(...w.records.map(r => r.fiveH));
   }
   return Array.from(map.values()).sort((a, b) => a.startTime - b.startTime);
+}
+
+// 算某个窗口起点能挪到的合法范围 [minStart, maxStart]，整点对齐
+function getWindowAdjustRange(target, allWindows) {
+  const idx = allWindows.findIndex((w) => w.id === target.id);
+  const prevWin = idx > 0 ? allWindows[idx - 1] : null;
+  const nextWin = idx >= 0 && idx < allWindows.length - 1 ? allWindows[idx + 1] : null;
+  const recs = target.records;
+  const firstTs = recs[0].timestamp;
+  const lastTs = recs[recs.length - 1].timestamp;
+
+  // 起点下界：自家最晚一笔记录留得住 + 不能侵前一个窗口的地盘
+  let minStart = lastTs - FIVE_HOURS_MS + 1;
+  if (prevWin) minStart = Math.max(minStart, prevWin.endTime);
+  minStart = ceilToHour(minStart);
+
+  // 起点上界：自家最早一笔记录留得住 + 不能侵后一个窗口的地盘
+  let maxStart = firstTs;
+  if (nextWin) maxStart = Math.min(maxStart, nextWin.startTime - FIVE_HOURS_MS);
+  maxStart = floorToHour(maxStart);
+
+  return { minStart, maxStart };
 }
 
 // 当前是否还处于活跃窗口（不超过 5h 的窗口）
@@ -355,13 +406,13 @@ function computeOverallRate(windows, settings) {
 // 高峰时段汇率
 function computePeakRate(windows, settings) {
   return computeRateForWindows(windows, settings,
-    (w) => isPeakHour(w.startTime, settings));
+    (w) => isPeakHour(w.startTime));
 }
 
 // 非高峰时段汇率
 function computeOffPeakRate(windows, settings) {
   return computeRateForWindows(windows, settings,
-    (w) => !isPeakHour(w.startTime, settings));
+    (w) => !isPeakHour(w.startTime));
 }
 
 /* =================================================
@@ -383,6 +434,7 @@ const state = {
   isNewWeek: false,      // 本周是否还没有任何记录（= 这笔是本周第一笔）
   selectedHistoryWindowId: null,
   selectedWeekStart: null,       // null = 当前周
+  adjustOpen: false,             // 历史卡里"调起点"面板是否展开
 };
 
 // 根据现状重置 draft（每次保存后/页面初始化时调用）
@@ -469,11 +521,24 @@ function maybeRefreshDraft() {
   }
 }
 
-// 添加一条新记录
-function addRecord(fiveH, weekly, noteText) {
+// 添加一条新记录。isCorrection=true 时不新增，而是覆盖最后一条同窗口的记录
+function addRecord(fiveH, weekly, noteText, isCorrection) {
   const ts = Date.now();
   const lastRecord = state.records[state.records.length - 1];
   const windowId = determineWindowId(ts, lastRecord);
+
+  // 修正路径：上一条同窗口、且这次明确是"低于上次"的修正 → 覆盖而不是追加
+  if (isCorrection && lastRecord && lastRecord.windowId === windowId) {
+    lastRecord.timestamp = ts;
+    lastRecord.fiveH = Math.round(fiveH);
+    lastRecord.weekly = Math.round(weekly);
+    // 备注框为空时不动旧备注（备注框默认是空的，不能让"修正数字"顺手清掉旧笔记）
+    const trimmed = (noteText || '').trim();
+    if (trimmed) lastRecord.note = trimmed;
+    state.selectedHistoryWindowId = windowId;
+    saveData();
+    return;
+  }
 
   const record = {
     id: ts,
@@ -483,12 +548,8 @@ function addRecord(fiveH, weekly, noteText) {
     windowId: windowId,
   };
 
-  // 备注现在挂在记录上而不是窗口上：写了就钉在这一笔，没写就不挂。
-  // trim 一下避免空白字符串占位
-  if (noteText !== undefined && noteText !== null) {
-    const trimmed = noteText.trim();
-    if (trimmed) record.note = trimmed;
-  }
+  const trimmed = (noteText || '').trim();
+  if (trimmed) record.note = trimmed;
 
   state.records.push(record);
   // 记一笔之后自动把历史视图选中跟到这条记录所在的窗口。
@@ -682,25 +743,38 @@ function handleStep(target, step) {
 
 // 保存按钮处理
 async function handleSave() {
-  // 检查是否需要"低于上次"确认
+  // 检查是否需要"低于上次"确认。低于上次几乎一定是修正——确认后覆盖前一条
   const lower5h = state.draft5h < state.draftPrev5h;
   const lowerWeekly = state.draftWeekly < state.draftPrevWeekly;
+  let isCorrection = false;
   if ((lower5h || lowerWeekly) && !state.isNewWindow) {
     const fields = [];
     if (lower5h) fields.push(`5h:  ${state.draftPrev5h}% → ${state.draft5h}%`);
     if (lowerWeekly) fields.push(`weekly:  ${state.draftPrevWeekly}% → ${state.draftWeekly}%`);
+    // 快照对话框打开时的最后一条记录的 windowId，确认后要校验窗口是否还活着
+    const expectedLast = state.records[state.records.length - 1];
+    const expectedWindowId = expectedLast ? expectedLast.windowId : null;
     const ok = await confirmDialog({
       icon: '✏️',
       title: '咦～这次比上次低哦',
-      message: `${fields.join('\n')}\n\n是要修正之前打错的吗？`,
+      message: `${fields.join('\n')}\n\n是要修正之前打错的吗？\n确定的话就把上一笔替换掉～`,
       confirmText: '就这样记下',
       cancelText: '再想想',
     });
     if (!ok) return;
+    // 对话框可能挂了很久跨过 5h 窗口边界——这时不能再当修正、否则会变成"追加新记录"
+    const lastNow = state.records[state.records.length - 1];
+    const stillSameWindow = lastNow && lastNow.windowId === expectedWindowId
+      && Date.now() < lastNow.windowId + FIVE_HOURS_MS;
+    if (!stillSameWindow) {
+      showToast('5h 窗口已经过去啦，刚才那一笔没替换哦');
+      return;
+    }
+    isCorrection = true;
   }
 
   const noteText = $('#window-note').value;
-  addRecord(state.draft5h, state.draftWeekly, noteText);
+  addRecord(state.draft5h, state.draftWeekly, noteText, isCorrection);
 
   // 备注挂到记录上之后清空输入框，下次记一笔从空开始
   $('#window-note').value = '';
@@ -1120,6 +1194,7 @@ function renderWindowDetail(windows) {
       windowChart = null;
     }
     renderNotesArea(null);
+    renderAdjustPanel(null, []);
     return;
   }
 
@@ -1131,7 +1206,7 @@ function renderWindowDetail(windows) {
   const endD = new Date(w.endTime);
   const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
   const isActive = Date.now() < w.endTime;
-  const peakTag = isPeakHour(w.startTime, state.settings) ? ' 🔥' : '';
+  const peakTag = isPeakHour(w.startTime) ? ' 🔥' : '';
   const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
   $('#history-title').textContent = `${dateStr} ${pad(startD.getHours())}:00 - ${pad(endD.getHours())}:00${peakTag} ${isActive ? '· 进行中' : '· 已结束'}`;
 
@@ -1144,6 +1219,9 @@ function renderWindowDetail(windows) {
 
   // 备注区：默认显示最新一条 + 可展开看全部
   renderNotesArea(w);
+
+  // 调起点面板
+  renderAdjustPanel(w, windows);
 
   // 折线图：在每个点上额外挂 record 引用，方便 tooltip 取出备注
   const points = w.records.map(r => ({ x: r.timestamp, y: r.fiveH, record: r }));
@@ -1311,6 +1389,129 @@ function renderNotesArea(window) {
   }).join('');
 }
 
+// 渲染"调起点"面板：toggle 按钮跟窗口存在与否，面板用 .is-open 控制展开动画
+function renderAdjustPanel(window, windows) {
+  const toggleBtn = $('#adjust-toggle-btn');
+  const panel = $('#adjust-panel');
+  const hint = $('#adjust-hint');
+  const dateInput = $('#adjust-date');
+  const hourInput = $('#adjust-hour');
+  const confirmBtn = $('#adjust-confirm-btn');
+
+  // 没窗口时按钮藏起来、面板收回去（不再用 hidden 属性，让 max-height 动画接管）
+  panel.hidden = false;
+  if (!window) {
+    toggleBtn.hidden = true;
+    panel.classList.remove('is-open');
+    state.adjustOpen = false;
+    return;
+  }
+  toggleBtn.hidden = false;
+  toggleBtn.textContent = state.adjustOpen ? '✕ 收一下' : '✏️ 调起点';
+
+  if (!state.adjustOpen) {
+    panel.classList.remove('is-open');
+    return;
+  }
+
+  const range = getWindowAdjustRange(window, windows);
+  panel.classList.add('is-open');
+
+  // 整个范围被夹死、连原起点都没法保持的情况几乎不会发生，但兜底处理
+  if (range.minStart > range.maxStart) {
+    hint.textContent = '这个窗口被前后夹得严严实实，挪不动 (｡•́︿•̀｡)';
+    dateInput.disabled = true;
+    hourInput.disabled = true;
+    confirmBtn.disabled = true;
+    return;
+  }
+
+  dateInput.disabled = false;
+  hourInput.disabled = false;
+  confirmBtn.disabled = false;
+
+  const minD = new Date(range.minStart);
+  const maxD = new Date(range.maxStart);
+  hint.textContent = `这个窗口可以挪到 ${formatHintTime(minD)} 到 ${formatHintTime(maxD)} 之间`;
+
+  // min/max 边界每次 render 都更新（反映相邻窗口的最新状态），但不在这里写 value——
+  // 否则 renderAll 触发时（切主题/保存/同步）会把用户正在编辑的输入吞掉
+  dateInput.min = formatYMD(minD);
+  dateInput.max = formatYMD(maxD);
+}
+
+function formatYMD(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function formatHintTime(d) {
+  const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${pad(d.getHours())}:00`;
+}
+
+// 把窗口当前起点填进输入框作为初始默认值，只在"关→开"瞬间调用
+function seedAdjustInputs(window) {
+  const curD = new Date(window.startTime);
+  $('#adjust-date').value = formatYMD(curD);
+  $('#adjust-hour').value = curD.getHours();
+}
+
+function toggleAdjustPanel() {
+  const opening = !state.adjustOpen;
+  state.adjustOpen = opening;
+  const windows = computeWindows(state.records);
+  const w = windows.find((x) => x.id === state.selectedHistoryWindowId);
+  if (opening && w) seedAdjustInputs(w);
+  renderAdjustPanel(w, windows);
+}
+
+function cancelAdjustPanel() {
+  state.adjustOpen = false;
+  const windows = computeWindows(state.records);
+  const w = windows.find((x) => x.id === state.selectedHistoryWindowId);
+  renderAdjustPanel(w, windows);
+}
+
+function confirmAdjustWindow() {
+  const windows = computeWindows(state.records);
+  const w = windows.find((x) => x.id === state.selectedHistoryWindowId);
+  if (!w) return;
+
+  const dateStr = $('#adjust-date').value;
+  const hour = parseInt($('#adjust-hour').value, 10);
+  const parts = dateStr ? dateStr.split('-').map((s) => parseInt(s, 10)) : [];
+  if (parts.length !== 3 || parts.some(isNaN) || isNaN(hour) || hour < 0 || hour > 23) {
+    showToast('日期或小时不太对～');
+    return;
+  }
+  const newD = new Date(parts[0], parts[1] - 1, parts[2], hour, 0, 0, 0);
+  const newId = newD.getTime();
+  const oldId = w.id;
+  if (newId === oldId) {
+    showToast('起点没变哦 (｡•́︿•̀｡)');
+    return;
+  }
+
+  const range = getWindowAdjustRange(w, windows);
+  if (newId < range.minStart || newId > range.maxStart) {
+    showToast('有点超出范围啦，看看上面的提示～');
+    return;
+  }
+
+  for (const r of state.records) {
+    if (r.windowId === oldId) r.windowId = newId;
+  }
+  if (state.selectedHistoryWindowId === oldId) {
+    state.selectedHistoryWindowId = newId;
+  }
+  state.adjustOpen = false;
+
+  saveData();
+  resetDraft();
+  renderAll();
+  showToast('起点挪好啦 ✨');
+}
+
 // 简单的 HTML 转义，防止备注里的 <script> 之类被当 HTML 渲染
 function escapeHtml(str) {
   return String(str)
@@ -1328,120 +1529,113 @@ function escapeHtml(str) {
 function openSettings() {
   $('#setting-weekly-day').value = state.settings.weeklyResetDay;
   $('#setting-weekly-hour').value = state.settings.weeklyResetHour;
-  $('#setting-peak-start').value = state.settings.peakStartHour;
-  $('#setting-peak-end').value = state.settings.peakEndHour;
-  $('#setting-peak-weekday').checked = state.settings.peakWeekdayOnly;
-  renderCalibrateInfo();
   fillSyncInputs();
-  // 保险：万一上次关闭动画没跑完用户又点开，先把残留的 class 清掉
+  renderResetCard();
+  renderPeakCardDST();
+  renderConfigSummary();
   const mask = $('#settings-modal');
   mask.classList.remove('is-closing');
   mask.hidden = false;
 }
 
-// 在设置面板里显示"当前活跃窗口"的信息 + 配置好校准 input 的默认值
-function renderCalibrateInfo() {
-  const windows = computeWindows(state.records);
-  const currentWindow = getCurrentWindow(windows);
-  const infoEl = $('#calibrate-info');
-  const hourInput = $('#setting-calibrate-hour');
-  const calBtn = $('#calibrate-btn');
-
-  if (!currentWindow) {
-    infoEl.textContent = '当前没有活跃的 5h 窗口～';
-    infoEl.classList.add('is-empty');
-    hourInput.value = '';
-    hourInput.disabled = true;
-    calBtn.disabled = true;
-    return;
-  }
-
-  const startD = new Date(currentWindow.startTime);
-  const endD = new Date(currentWindow.endTime);
+// 渲染"这周的起点"卡的状态化展示
+function renderResetCard() {
   const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
-  infoEl.textContent =
-    `📍 ${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]} ` +
-    `${pad(startD.getHours())}:00 - ${pad(endD.getHours())}:00`;
-  infoEl.classList.remove('is-empty');
-  hourInput.value = startD.getHours();
-  hourInput.disabled = false;
-  calBtn.disabled = false;
+  const day = state.settings.weeklyResetDay;
+  const hour = state.settings.weeklyResetHour;
+  const dayEl = $('#reset-stat-day');
+  const timeEl = $('#reset-stat-time');
+  if (dayEl) dayEl.textContent = `${dayNames[day]} · ${pad(hour)}:00`;
+  if (timeEl) {
+    const now = Date.now();
+    const weekEnd = getWeekEnd(getWeekStart(now, state.settings), state.settings);
+    const remainingMs = weekEnd - now;
+    timeEl.textContent = remainingMs > 0
+      ? `距下次重置 ${formatRemainingUntilReset(remainingMs)}`
+      : '距下次重置 马上就到啦 ✨';
+  }
 }
 
-// 校准：把当前活跃窗口的起点挪到指定的整点小时（同一天）
-function calibrateCurrentWindow() {
-  const windows = computeWindows(state.records);
-  const currentWindow = getCurrentWindow(windows);
-  if (!currentWindow) {
-    showToast('当前没有活跃窗口～');
-    return;
-  }
+// 渲染高峰卡的 DST 切换显示
+function renderPeakCardDST() {
+  const peakEl = $('#peak-text');
+  const dstLine = $('#peak-dst-line');
+  if (!peakEl || !dstLine) return;
+  const now = new Date();
+  const dst = isUSinDST(now);
+  peakEl.textContent = dst ? '20:00 — 02:00' : '21:00 — 03:00';
 
-  const newHour = parseInt($('#setting-calibrate-hour').value, 10);
-  if (isNaN(newHour) || newHour < 0 || newHour > 23) {
-    showToast('请输入 0-23 之间的小时');
-    return;
+  const { start, end } = getUSDSTBounds(now.getFullYear());
+  const fmtMD = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+  if (dst) {
+    const next = end < now ? getUSDSTBounds(now.getFullYear() + 1).end : end;
+    dstLine.innerHTML = `现在按<b>美国夏令时</b>显示。${fmtMD(next)} 后切回 21:00 — 03:00`;
+  } else {
+    const next = start < now ? getUSDSTBounds(now.getFullYear() + 1).start : start;
+    dstLine.innerHTML = `现在按<b>美国冬令时</b>显示。${fmtMD(next)} 后切到 20:00 — 02:00`;
   }
+}
 
-  const oldId = currentWindow.id;
-  const oldD = new Date(oldId);
-  const newD = new Date(oldD);
-  newD.setHours(newHour, 0, 0, 0);
-  const newId = newD.getTime();
-
-  if (newId === oldId) {
-    showToast('起点没变哦 (｡•́︿•̀｡)');
-    return;
+// 渲染同步配置卡的 summary：已配置时显示脱敏摘要，未配置时默认展开折叠区
+function renderConfigSummary() {
+  const c = syncState.config;
+  const meta = $('#config-status-meta');
+  const summary = $('#config-summary');
+  const mkHint = $('#config-mk-hint');
+  const binHint = $('#config-bin-hint');
+  const foldable = $('#config-foldable');
+  if (!meta || !foldable) return;
+  if (c && c.masterKey && c.binId) {
+    meta.textContent = '已配置';
+    if (summary) summary.style.display = '';
+    if (mkHint) mkHint.textContent = '●●●●●●●●●●●●';
+    if (binHint) binHint.textContent = c.binId.length > 14 ? c.binId.slice(0, 10) + '…' : c.binId;
+    foldable.classList.remove('is-open');
+  } else {
+    meta.textContent = '未配置';
+    if (summary) summary.style.display = 'none';
+    foldable.classList.add('is-open');
   }
+}
 
-  // 边界检查：新窗口 [newId, newId+5h) 必须完全包住已有的所有记录
-  // 这样才能保证校准后不会有记录"漏"在窗口之外
-  const newEnd = newId + FIVE_HOURS_MS;
-  const outOfRange = currentWindow.records.some(
-    (r) => r.timestamp < newId || r.timestamp >= newEnd
-  );
-  if (outOfRange) {
-    showToast('这样挪会让已有记录跑出窗口外，换个时间试试？');
-    return;
-  }
+// 用户被 Anthropic 临时重置了 weekly 额度时按一下，把"现在"钉为新一周起点
+async function markWeeklyResetNow() {
+  const ok = await confirmDialog({
+    icon: '🌱',
+    title: '从这一刻起算新一周？',
+    message: '之前的周和 5h 都不会动哦～\n但从现在起 weekly 重新从 0 开始，距下次重置也从这里再 +7 天。',
+    confirmText: '从这里出发',
+    cancelText: '再想想',
+  });
+  if (!ok) return;
 
-  // 所有通过检查 → 更新 records 的 windowId + 更新选中态
-  // （备注现在直接挂在 record 上，不需要单独迁移）
-  for (const r of state.records) {
-    if (r.windowId === oldId) r.windowId = newId;
+  // 这里只动 anchor、绝不动 preAnchor——preAnchor 是"改 day/hour 之前"的旧规则快照，
+  // 由 closeSettings 维护。重置按钮没改 day/hour，覆盖快照会让历史周边界全错位
+  if (state.settings.preAnchorDay == null) {
+    state.settings.preAnchorDay = state.settings.weeklyResetDay;
+    state.settings.preAnchorHour = state.settings.weeklyResetHour;
   }
-  if (state.selectedHistoryWindowId === oldId) {
-    state.selectedHistoryWindowId = newId;
-  }
+  state.settings.weekAnchor = Date.now();
+  state.settings.lastModifiedAt = Date.now();
+  state.selectedWeekStart = null;
 
-  saveData();
   resetDraft();
+  saveData();
   renderAll();
-  renderCalibrateInfo();  // 刷新设置面板里的信息
-  showToast('窗口起点已校准 ✨');
+  renderResetCard();
+  showToast('好啦，从这里重新出发 🌱');
 }
 
 function closeSettings() {
-  // 读取设置。先把旧值全部快照下来，用于判断"是不是真的改了"以及"哪部分改了"。
+  // 高峰相关字段不再读取——按官方公告内置、跟着 DST 自动算
   const oldDay = state.settings.weeklyResetDay;
   const oldHour = state.settings.weeklyResetHour;
-  const oldPeakStart = state.settings.peakStartHour;
-  const oldPeakEnd = state.settings.peakEndHour;
-  const oldPeakWeekdayOnly = state.settings.peakWeekdayOnly;
   state.settings.weeklyResetDay = parseInt($('#setting-weekly-day').value, 10);
   state.settings.weeklyResetHour = parseInt($('#setting-weekly-hour').value, 10);
-  state.settings.peakStartHour = parseInt($('#setting-peak-start').value, 10);
-  state.settings.peakEndHour = parseInt($('#setting-peak-end').value, 10);
-  state.settings.peakWeekdayOnly = $('#setting-peak-weekday').checked;
 
-  // 任意字段真改了 → 更新 settings 的"最后修改时刻"。这是云同步版本判断用的，
-  // 不真改就不更新——避免仅仅打开关掉设置面板也让云端更新的 settings 被本地覆盖。
   const anySettingChanged =
     state.settings.weeklyResetDay !== oldDay ||
-    state.settings.weeklyResetHour !== oldHour ||
-    state.settings.peakStartHour !== oldPeakStart ||
-    state.settings.peakEndHour !== oldPeakEnd ||
-    state.settings.peakWeekdayOnly !== oldPeakWeekdayOnly;
+    state.settings.weeklyResetHour !== oldHour;
   if (anySettingChanged) {
     state.settings.lastModifiedAt = Date.now();
   }
@@ -2461,6 +2655,7 @@ function bindEvents() {
     const windows = computeWindows(state.records);
     const idx = windows.findIndex(w => w.id === state.selectedHistoryWindowId);
     if (idx > 0) {
+      state.adjustOpen = false;
       crossFadeChart($('.window-chart-wrap'), () => {
         state.selectedHistoryWindowId = windows[idx - 1].id;
         renderHistory();
@@ -2471,12 +2666,18 @@ function bindEvents() {
     const windows = computeWindows(state.records);
     const idx = windows.findIndex(w => w.id === state.selectedHistoryWindowId);
     if (idx >= 0 && idx < windows.length - 1) {
+      state.adjustOpen = false;
       crossFadeChart($('.window-chart-wrap'), () => {
         state.selectedHistoryWindowId = windows[idx + 1].id;
         renderHistory();
       });
     }
   });
+
+  // 历史窗口"调起点"
+  $('#adjust-toggle-btn').addEventListener('click', toggleAdjustPanel);
+  $('#adjust-cancel-btn').addEventListener('click', cancelAdjustPanel);
+  $('#adjust-confirm-btn').addEventListener('click', confirmAdjustWindow);
 
   // Weekly 周导航 —— 同上
   $('#prev-week-btn').addEventListener('click', () => {
@@ -2520,8 +2721,15 @@ function bindEvents() {
     if (e.target.id === 'settings-modal') closeSettings();
   });
 
-  // 5h 窗口校准
-  $('#calibrate-btn').addEventListener('click', calibrateCurrentWindow);
+  // Anthropic 临时重置 weekly
+  $('#weekly-anchor-now-btn').addEventListener('click', markWeeklyResetNow);
+
+  // 设置面板里所有折叠按钮：点了就切换父级 .is-open，CSS 里的 grid 过渡接管展开收起
+  document.querySelectorAll('[data-fold]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.parentElement.classList.toggle('is-open');
+    });
+  });
 
   // 数据导入导出
   $('#export-btn').addEventListener('click', exportJSON);
