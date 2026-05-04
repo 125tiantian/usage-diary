@@ -725,20 +725,66 @@ function renderInputCard() {
 
 // 步进按钮处理
 function handleStep(target, step) {
+  const before = target === '5h' ? state.draft5h : state.draftWeekly;
   if (target === '5h') {
     state.draft5h = clamp(state.draft5h + step, 0, 100);
   } else {
     state.draftWeekly = clamp(state.draftWeekly + step, 0, 100);
   }
-  // 触发数字弹跳动画
-  const numEl = target === '5h'
-    ? $('#input-5h-num').parentElement
-    : $('#input-weekly-num').parentElement;
-  numEl.classList.remove('bump');
-  void numEl.offsetWidth; // 强制重排，重启动画
-  numEl.classList.add('bump');
+  const after = target === '5h' ? state.draft5h : state.draftWeekly;
 
   renderInputCard();
+
+  // 大数字弹跳：只在数字真的变了时触发（夹边界时不弹，避免 +1 已经 100 还瞎闪）
+  if (after !== before) {
+    const numEl = target === '5h'
+      ? $('#input-5h-num').parentElement
+      : $('#input-weekly-num').parentElement;
+    fireAnim(numEl, 'is-pulse', 380);
+  }
+}
+
+// 把一个 class 加到元素上触发 CSS animation，dur ms 后自动移除
+// 重复调用会先 remove + reflow + add，让动画从头开始重播
+function fireAnim(el, cls, dur) {
+  if (!el) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  if (dur) setTimeout(() => el.classList.remove(cls), dur);
+}
+
+// 从某个原点位置（一般是被点击的按钮）飞出 N 颗 ✨ 粒子，
+// 散射方向偏上方半圆，每颗的角度/距离/字符/颜色/字号都随机
+function spawnSparks(originEl, count) {
+  if (!originEl) return;
+  const rect = originEl.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const symbols = ['✨', '·', '✿', '⋆', '✨'];
+  const colors  = ['#F4D58D', '#F5A678', '#95C9A6', '#F4D58D'];
+
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('span');
+    p.className = 'spark-particle is-flying';
+    p.textContent = symbols[i % symbols.length];
+
+    const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.0;
+    const distance = 55 + Math.random() * 50;
+    const dx = Math.cos(angle) * distance;
+    const dy = Math.sin(angle) * distance;
+
+    p.style.left = (cx + (Math.random() - 0.5) * 18) + 'px';
+    p.style.top  = (cy - 4) + 'px';
+    p.style.setProperty('--dx',  dx.toFixed(1) + 'px');
+    p.style.setProperty('--dy',  dy.toFixed(1) + 'px');
+    p.style.setProperty('--rot', (Math.random() * 220 - 80).toFixed(0) + 'deg');
+    p.style.fontSize = (13 + Math.random() * 11) + 'px';
+    p.style.color = colors[i % colors.length];
+
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 1100);
+  }
 }
 
 // 保存按钮处理
@@ -773,19 +819,50 @@ async function handleSave() {
     isCorrection = true;
   }
 
+  // 哪一栏真的变了——只有变了的那栏才播进度条柔光（数字本身不动，因为它没变）
+  const changed5h = state.draft5h !== state.draftPrev5h;
+  const changedW  = state.draftWeekly !== state.draftPrevWeekly;
+  const anyChanged = changed5h || changedW;
+
   const noteText = $('#window-note').value;
   addRecord(state.draft5h, state.draftWeekly, noteText, isCorrection);
 
   // 备注挂到记录上之后清空输入框，下次记一笔从空开始
   $('#window-note').value = '';
 
-  // 触发保存光晕动画
+  // —— 触发新的保存动画 ——
   const card = document.querySelector('.input-card');
-  card.classList.remove('is-saving');
-  void card.offsetWidth;
-  card.classList.add('is-saving');
+  const saveBtn = $('#save-btn');
+  const ripple = saveBtn && saveBtn.querySelector('.ripple');
+  const sweep = card && card.querySelector('.sweep-overlay');
+  const toast = card && card.querySelector('.save-confirm-toast');
 
-  showToast('记下啦 ✨');
+  // 1. 按钮反馈：凹陷 → 涟漪 → 反弹 → 飞出 ✨ 粒子（永远播）
+  if (saveBtn) {
+    saveBtn.classList.remove('is-rebound');
+    saveBtn.classList.add('is-pressing');
+    fireAnim(ripple, 'is-rippling', 700);
+    spawnSparks(saveBtn, anyChanged ? 7 : 3);
+    setTimeout(() => {
+      saveBtn.classList.remove('is-pressing');
+      saveBtn.classList.add('is-rebound');
+    }, 110);
+    setTimeout(() => saveBtn.classList.remove('is-rebound'), 470);
+  }
+
+  // 2. 进度条柔光（只对变了的那栏）
+  if (changed5h) {
+    const glow = $('#input-5h-prev-fill').parentElement.querySelector('.settle-glow');
+    fireAnim(glow, 'is-glowing', 700);
+  }
+  if (changedW) {
+    const glow = $('#input-weekly-prev-fill').parentElement.querySelector('.settle-glow');
+    fireAnim(glow, 'is-glowing', 700);
+  }
+
+  // 3. 卡片扫光 + 4. 底部气泡（紧随其后）
+  setTimeout(() => fireAnim(sweep, 'is-sweeping', 750), 60);
+  setTimeout(() => fireAnim(toast, 'is-showing', 1300), 130);
 
   resetDraft();
   renderAll();
@@ -1609,21 +1686,49 @@ async function markWeeklyResetNow() {
   });
   if (!ok) return;
 
-  // 这里只动 anchor、绝不动 preAnchor——preAnchor 是"改 day/hour 之前"的旧规则快照，
-  // 由 closeSettings 维护。重置按钮没改 day/hour，覆盖快照会让历史周边界全错位
+  // anchor 钉到整点而不是任意时刻，让"周X · HH:00"显示和实际重置时刻完全一致
+  const anchorTs = floorToHour(Date.now());
+  const anchorD = new Date(anchorTs);
+
+  // preAnchor 是"anchor 之前的旧规则"快照，已存就不覆盖（保留更早的初始规则）
   if (state.settings.preAnchorDay == null) {
     state.settings.preAnchorDay = state.settings.weeklyResetDay;
     state.settings.preAnchorHour = state.settings.weeklyResetHour;
   }
-  state.settings.weekAnchor = Date.now();
+
+  // day/hour 同步覆盖成此刻对应的值——这一行显示的就是"现在每周何时重置"的事实
+  state.settings.weeklyResetDay = anchorD.getDay();
+  state.settings.weeklyResetHour = anchorD.getHours();
+  state.settings.weekAnchor = anchorTs;
   state.settings.lastModifiedAt = Date.now();
   state.selectedWeekStart = null;
 
-  resetDraft();
-  saveData();
-  renderAll();
-  renderResetCard();
-  showToast('好啦，从这里重新出发 🌱');
+  // —— 播 "消解 → 脉动 → 🌱 → 浮入 → 气泡" 五段动画 ——
+  const dayEl = $('#reset-stat-day');
+  const timeEl = $('#reset-stat-time');
+  const card = document.querySelector('.reset-card');
+  const sprout = card && card.querySelector('.sprout-emoji');
+  const toast = card && card.querySelector('.reset-confirm-toast');
+
+  // t=0 旧文本上飘消解
+  fireAnim(dayEl,  'is-dissolving', 0);
+  fireAnim(timeEl, 'is-dissolving', 0);
+  // t=80 卡片青绿色脉动
+  setTimeout(() => fireAnim(card, 'is-pulsing', 1000), 80);
+  // t=200 中央 🌱 萌芽
+  setTimeout(() => fireAnim(sprout, 'is-popping', 1050), 200);
+  // t=360 写新值 + 文本浮入；这里才真正调 saveData / renderAll，
+  // 让旧文本能完整地"消解"完再被替换
+  setTimeout(() => {
+    resetDraft();
+    saveData();
+    renderAll();
+    renderResetCard();
+    if (dayEl)  { dayEl.classList.remove('is-dissolving');  fireAnim(dayEl,  'is-sprouting', 500); }
+    if (timeEl) { timeEl.classList.remove('is-dissolving'); fireAnim(timeEl, 'is-sprouting', 500); }
+  }, 360);
+  // t=450 底部气泡
+  setTimeout(() => fireAnim(toast, 'is-showing', 1900), 450);
 }
 
 function closeSettings() {

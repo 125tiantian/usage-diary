@@ -586,14 +586,16 @@ body:not(.is-bars-armed) .ring-bar-fill {
 .input-sub--5h .big-number { color: var(--c-5h-deep); }
 .input-sub--weekly .big-number { color: var(--c-weekly-deep); }
 
-@keyframes bumpAnim {
-  0%   { transform: scale(1); }
-  40%  { transform: scale(1.10); }
-  100% { transform: scale(1); }
+/* 按 +/− 时大数字小弹跳：scale 1 → 1.08 → 1，慢且柔
+   旧版本叫 .bump、用 1.10 + ease-bounce、0.32s，弹得过头也太快。
+   新版改用 ease-out 曲线和 380ms，更"舒展"而不是"啪一下" */
+.big-number.is-pulse {
+  animation: numPulse 380ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-
-.big-number.bump {
-  animation: bumpAnim 0.32s var(--ease-bounce);
+@keyframes numPulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 
 .big-number-pct {
@@ -642,7 +644,11 @@ body:not(.is-bars-armed) .ring-bar-fill {
 .bar-fill--new {
   background: var(--c-honey);
   z-index: 2;
-  transition: width 0.4s var(--ease-soft), background 0.3s var(--ease-soft);
+  /* left 也加 transition：当 num < prev 时高亮段从 prev 左边开始，
+     按 +/− 改 num 会同时让 left 和 width 变化，两边都得平滑滑动 */
+  transition: width 0.4s var(--ease-soft),
+              left 0.4s var(--ease-soft),
+              background 0.3s var(--ease-soft);
 }
 
 .bar-fill--new.is-reverse {
@@ -753,6 +759,16 @@ body:not(.is-bars-armed) .ring-bar-fill {
   transform: translateY(1px) scale(0.96);
 }
 
+/* 步进按钮被点击时的弹回反馈（class 由 JS 在点击时打上） */
+.step-btn.is-tapped {
+  animation: stepTap 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes stepTap {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(0.88); }
+  100% { transform: scale(1); }
+}
+
 /* —— 备注 —— */
 .note-row {
   margin-top: clamp(14px, 2vh, 22px);
@@ -820,6 +836,233 @@ body:not(.is-bars-armed) .ring-bar-fill {
 
 .save-btn:active {
   transform: translateY(0) scale(0.97);
+}
+
+/* —— 保存按钮：按下凹陷 + 反弹（class 由 JS 控制） —— */
+.save-btn { position: relative; overflow: hidden; }
+.save-btn.is-pressing {
+  transform: scale(0.96);
+  transition: transform 110ms ease-out;
+}
+.save-btn.is-rebound {
+  transform: scale(1);
+  transition: transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* 按钮中央扩散一圈光晕涟漪 */
+.save-btn .ripple {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  opacity: 0;
+}
+.save-btn .ripple.is-rippling {
+  animation: btnRipple 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes btnRipple {
+  0%   { transform: scale(1);  opacity: 0.85; }
+  100% { transform: scale(36); opacity: 0; }
+}
+
+/* —— 飞出的 ✨ 粒子：贴在 body 上由 JS 算位置 —— */
+.spark-particle {
+  position: fixed;
+  pointer-events: none;
+  z-index: 1000;
+  will-change: transform, opacity;
+  font-weight: 700;
+  user-select: none;
+}
+.spark-particle.is-flying {
+  animation: sparkFly 950ms cubic-bezier(0.22, 0.7, 0.3, 1) forwards;
+}
+@keyframes sparkFly {
+  0%   { transform: translate(0, 0) scale(0.4) rotate(0deg);  opacity: 0; }
+  15%  { opacity: 1; }
+  60%  {
+    transform: translate(var(--dx), var(--dy)) scale(1.15) rotate(var(--rot));
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(calc(var(--dx) * 1.4), calc(var(--dy) * 1.55)) scale(0.5) rotate(calc(var(--rot) * 1.6));
+    opacity: 0;
+  }
+}
+
+/* —— 进度条：保存瞬间内外柔光沉淀（蜜糖色一闪散去） —— */
+.bar-track .settle-glow {
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+.bar-track .settle-glow.is-glowing {
+  animation: barSettleGlow 700ms ease-out;
+}
+@keyframes barSettleGlow {
+  0%   {
+    opacity: 0;
+    box-shadow:
+      inset 0 0 0 0 rgba(244, 213, 141, 0),
+      0 0 0 0 rgba(244, 213, 141, 0);
+  }
+  35%  {
+    opacity: 1;
+    box-shadow:
+      inset 0 0 14px 2px rgba(244, 213, 141, 0.65),
+      0 0 14px 0 rgba(244, 213, 141, 0.35);
+  }
+  100% {
+    opacity: 0;
+    box-shadow:
+      inset 0 0 0 0 rgba(244, 213, 141, 0),
+      0 0 0 0 rgba(244, 213, 141, 0);
+  }
+}
+
+/* —— 输入卡：保存瞬间一道金色斜光从左扫到右 —— */
+.input-card .sweep-overlay {
+  position: absolute; inset: 0;
+  border-radius: var(--radius-card);
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0;
+}
+.input-card .sweep-overlay::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 35%,
+    rgba(244, 213, 141, 0.32) 50%,
+    transparent 65%
+  );
+  transform: translateX(-110%);
+}
+.input-card .sweep-overlay.is-sweeping { opacity: 1; }
+.input-card .sweep-overlay.is-sweeping::before {
+  animation: cardSweep 750ms cubic-bezier(0.4, 0, 0.55, 1);
+}
+@keyframes cardSweep {
+  0%   { transform: translateX(-110%); }
+  100% { transform: translateX(110%); }
+}
+
+/* —— 输入卡底部"记下啦 ✨"小气泡 —— */
+.input-card { position: relative; }  /* 已经 relative 了，这里冗余但保险 */
+.save-confirm-toast {
+  position: absolute;
+  left: 50%; bottom: -8px;
+  transform: translate(-50%, 0);
+  background: linear-gradient(135deg, var(--c-weekly) 0%, var(--c-weekly-deep) 100%);
+  color: white;
+  padding: 7px 20px;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(111, 174, 131, 0.35);
+  white-space: nowrap;
+  z-index: 50;
+}
+.save-confirm-toast.is-showing {
+  animation: confirmToastUp 1300ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes confirmToastUp {
+  0%   { transform: translate(-50%, 8px)  scale(0.9); opacity: 0; }
+  18%  { transform: translate(-50%, -28px) scale(1);   opacity: 1; }
+  72%  { transform: translate(-50%, -28px) scale(1);   opacity: 1; }
+  100% { transform: translate(-50%, -44px) scale(0.96); opacity: 0; }
+}
+
+/* —— 重置卡：按"标记重置"那一刻的"消解 → 脉动 → 🌱 → 浮入 → 气泡" —— */
+.reset-card {
+  position: relative;
+  overflow: visible;
+}
+/* 卡片青绿色脉动 */
+.reset-card.is-pulsing {
+  animation: cardGreenPulse 950ms ease-out;
+}
+@keyframes cardGreenPulse {
+  0%, 100% {
+    background-color: var(--bg-card);
+    box-shadow: var(--shadow-soft);
+  }
+  35%      {
+    background-color: rgba(149, 201, 166, 0.16);
+    box-shadow: 0 6px 24px rgba(111, 174, 131, 0.18);
+  }
+}
+/* 旧文本"消解"上飘 + 模糊 + 淡出 */
+.reset-card .stat-val,
+.reset-card .stat-bottom {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+.reset-card .stat-bottom { display: block; }
+.reset-card .is-dissolving {
+  animation: textDissolve 320ms ease-in forwards;
+}
+@keyframes textDissolve {
+  0%   { transform: translateY(0)     scale(1);    opacity: 1; filter: blur(0); }
+  100% { transform: translateY(-10px) scale(0.94); opacity: 0; filter: blur(4px); }
+}
+/* 新文本"萌芽"浮入 + 模糊清晰 + 淡入 */
+.reset-card .is-sprouting {
+  animation: textSprout 480ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes textSprout {
+  0%   { transform: translateY(12px) scale(0.96); opacity: 0; filter: blur(3px); }
+  100% { transform: translateY(0)    scale(1);    opacity: 1; filter: blur(0); }
+}
+/* 中央 🌱 萌芽 */
+.sprout-emoji {
+  position: absolute;
+  left: 50%; top: 38%;
+  transform: translate(-50%, -50%) scale(0);
+  font-size: 60px;
+  pointer-events: none;
+  opacity: 0;
+  filter: drop-shadow(0 6px 14px rgba(111, 174, 131, 0.4));
+  z-index: 10;
+  will-change: transform, opacity;
+}
+.sprout-emoji.is-popping {
+  animation: sproutPop 1000ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes sproutPop {
+  0%   { transform: translate(-50%, -50%) scale(0)    rotate(-18deg); opacity: 0; }
+  28%  { transform: translate(-50%, -55%) scale(1.35) rotate(8deg);   opacity: 1; }
+  48%  { transform: translate(-50%, -65%) scale(1.1)  rotate(-4deg);  opacity: 1; }
+  75%  { transform: translate(-50%, -95%) scale(0.9)  rotate(3deg);   opacity: 0.55; }
+  100% { transform: translate(-50%, -130%) scale(0.7) rotate(0);      opacity: 0; }
+}
+/* "焕然一新 🌿"小气泡 */
+.reset-confirm-toast {
+  position: absolute;
+  left: 50%; bottom: -12px;
+  transform: translate(-50%, 0);
+  background: linear-gradient(135deg, var(--c-weekly) 0%, var(--c-weekly-deep) 100%);
+  color: white;
+  padding: 7px 20px;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(111, 174, 131, 0.35);
+  white-space: nowrap;
+  z-index: 50;
+}
+.reset-confirm-toast.is-showing {
+  animation: confirmToastUp 1900ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 /* ============ 8. 中间一行：汇率卡 + 周曲线 ============ */
@@ -1967,63 +2210,6 @@ body:not(.is-bars-armed) .ring-bar-fill {
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(-50%) translateY(20px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-/* ==== 保存瞬间的"四层绽放"动画 ====
-   以前只有一个 glow，看着很单薄、像"屏幕外围亮了一下"。
-   现在是 4 层并行动画：
-   1) 卡片整体 scale 轻微回弹    → 触感上"被按了一下又弹起来"
-   2) 保存按钮 scale down + overshoot → 按下去的那颗被按的按钮本身要响应
-   3) 大数字"盖章式"向下压 1px + 微暗 → 潜意识提示"数字被写进日记了"
-   4) 光晕扩散（保留并加强）     → 前 3 层收尾后光晕继续余韵
-   所有动画从 .is-saving class 加上那一瞬间同时开跑，
-   但各自的缓动曲线和 duration 决定了节奏感。 */
-
-@keyframes glow {
-  0%   { box-shadow: 0 0 0 0 rgba(244, 213, 141, 0.55); }
-  40%  { box-shadow: 0 0 0 32px rgba(244, 213, 141, 0.28); }
-  100% { box-shadow: 0 0 0 60px rgba(244, 213, 141, 0); }
-}
-
-@keyframes cardSavePulse {
-  0%   { transform: scale(1); }
-  18%  { transform: scale(0.985); }
-  55%  { transform: scale(1.006); }
-  100% { transform: scale(1); }
-}
-
-@keyframes saveBtnPulse {
-  0%   { transform: scale(1); }
-  20%  { transform: scale(0.94); }
-  55%  { transform: scale(1.06); }
-  100% { transform: scale(1); }
-}
-
-@keyframes numberStamp {
-  0%   { transform: translateY(0); opacity: 1; }
-  25%  { transform: translateY(1px); opacity: 0.78; }
-  70%  { transform: translateY(0); opacity: 1; }
-  100% { transform: translateY(0); opacity: 1; }
-}
-
-.input-card.is-saving {
-  animation:
-    cardSavePulse 0.55s var(--ease-bounce),
-    glow 1s var(--ease-soft);
-}
-
-/* 保存按钮自己的响应。用 .input-card.is-saving 作前缀保证只在保存瞬间触发，
-   不会跟 .save-btn:hover / :active 的 transition 打架（动画期间会覆盖 transform）。 */
-.input-card.is-saving .save-btn {
-  animation: saveBtnPulse 0.5s var(--ease-bounce);
-}
-
-/* 两个输入子卡里的大数字同时"盖章"。
-   注意：.big-number 本身还有 .bump 动画（步进按钮点击时触发），
-   但那个靠 class 触发、是独立动画，不会和这里的 animation 冲突——
-   这里的 animation 只在 .input-card.is-saving 生效、时长也更短。 */
-.input-card.is-saving .big-number {
-  animation: numberStamp 0.5s var(--ease-soft);
 }
 
 /* ============ 13b. 首屏 staggered 入场动画 ============

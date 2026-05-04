@@ -143,6 +143,7 @@
             <div class="bar-marker bar-marker--prev" id="input-5h-prev-marker">
               <span class="marker-label" id="input-5h-prev-label">↑0</span>
             </div>
+            <div class="settle-glow"></div>
           </div>
           <div class="stepper-row">
             <button class="step-btn step-btn--minus" data-target="5h" data-step="-10">−10</button>
@@ -167,6 +168,7 @@
             <div class="bar-marker bar-marker--prev" id="input-weekly-prev-marker">
               <span class="marker-label" id="input-weekly-prev-label">↑0</span>
             </div>
+            <div class="settle-glow"></div>
           </div>
           <div class="stepper-row">
             <button class="step-btn step-btn--minus" data-target="weekly" data-step="-10">−10</button>
@@ -188,8 +190,14 @@
       </div>
 
       <div class="save-row">
-        <button class="save-btn" id="save-btn">记一下 ✨</button>
+        <button class="save-btn" id="save-btn">
+          记一下 ✨
+          <span class="ripple"></span>
+        </button>
       </div>
+
+      <div class="sweep-overlay"></div>
+      <div class="save-confirm-toast">记下啦 ✨</div>
     </section>
 
     </div><!-- /.hero 第一屏结束 -->
@@ -386,6 +394,9 @@
             </div>
             <button class="text-btn text-btn--accent" id="weekly-anchor-now-btn">重置</button>
           </div>
+
+          <div class="sprout-emoji">🌱</div>
+          <div class="reset-confirm-toast">焕然一新 🌿</div>
         </div>
 
         <!-- 3. 数据备份 -->
