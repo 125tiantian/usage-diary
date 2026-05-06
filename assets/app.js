@@ -1703,6 +1703,12 @@ async function markWeeklyResetNow() {
   state.settings.lastModifiedAt = Date.now();
   state.selectedWeekStart = null;
 
+  // 同步回 input 控件——关面板时 closeSettings 会读它们写回 state，不同步就会被旧值反向覆盖。
+  const dayInput = $('#setting-weekly-day');
+  const hourInput = $('#setting-weekly-hour');
+  if (dayInput) dayInput.value = state.settings.weeklyResetDay;
+  if (hourInput) hourInput.value = state.settings.weeklyResetHour;
+
   // —— 播 "消解 → 脉动 → 🌱 → 浮入 → 气泡" 五段动画 ——
   const dayEl = $('#reset-stat-day');
   const timeEl = $('#reset-stat-time');
