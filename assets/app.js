@@ -1098,15 +1098,11 @@ function renderWeeklyChart(mode = 'update') {
     .filter(Boolean);
 
   // 理想匀速线：从 (weekStart, 0) 到 (weekEnd, 100)
-  // 特殊情况：跨 anchor 的历史周 weekEnd 被截短了（不到 7 天），
-  // 如果还画到 100%，这条线会比其他周斜得多，看起来像"5 天就该烧完"。
-  // 按"实际占满一周的比例"缩放终点 y，斜率就和完整周一致了——
-  // 视觉上就是同样的 45°，只是这条被 anchor 提前截停了，符合"残缺周"的真实情况。
-  const fullWeekMs = 7 * ONE_DAY_MS;
-  const idealEndY = 100 * (weekEnd - weekStart) / fullWeekMs;
+  // 残缺周（窗口不到 7 天）也按"这个窗口里要把 100% 用完"算斜率，
+  // 跟状态卡的"理想 X%"（按 elapsed/total 归一）保持一致。
   const idealPoints = [
     { x: weekStart, y: 0 },
-    { x: weekEnd, y: idealEndY },
+    { x: weekEnd, y: 100 },
   ];
 
   // 预测延伸线：仅当前周才显示预测
