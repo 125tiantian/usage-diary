@@ -25,17 +25,17 @@ const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const DEFAULT_SETTINGS = {
-  weeklyResetDay: 6,      // 0=日, 6=六
-  weeklyResetHour: 18,    // 18 点
+  weeklyResetDay: 6,      // 0=日, 6=六；当前规则的"星期"，从 weeklyRules 末尾派生
+  weeklyResetHour: 18,    // 18 点；同上
   peakStartHour: 21,      // 北京时间 21 点
   peakEndHour: 3,         // 次日 3 点
   peakWeekdayOnly: true,  // 仅工作日
-  // 用户手动改"周重置日/时"那一刻的时间戳。一旦设置：
-  // - anchor 及之后的周都以 anchor 为起点按 7 天段切（新一周从改设置那一刻开始）
-  // - anchor 之前的历史周按 preAnchorDay/preAnchorHour 规则切（保持原样）
+  // 周起点规则的时间线。每条 { from, day, hour } 描述"从这一刻起规则切换为 (day, hour)"。
+  // 第一条 from===0 是"史前期"，按 day/hour 切；后续每条都是一次重置或手动改时间，按 from 起每 7 天一轮。
+  // weekAnchor / preAnchorDay / preAnchorHour 是从这条链派生出来的兼容字段，给可能还在跑旧代码的端兜底，
+  // 不参与新代码的计算（getWeekStart/getWeekEnd 完全走 weeklyRules）。
+  weeklyRules: [{ from: 0, day: 6, hour: 18 }],
   weekAnchor: null,
-  // 改 anchor 之前的"周几 + 整点"规则的快照。只用来算 anchor 之前的历史周。
-  // 没有历史改动的话这两个就是 null，逻辑全部走 weeklyResetDay / weeklyResetHour。
   preAnchorDay: null,
   preAnchorHour: null,
   // 设置上次"真实"被修改的时间戳，用于云同步的版本判断。
@@ -77,6 +77,68 @@ function refreshColors() {
    2. 数据存储
    ================================================= */
 
+// 把老格式（weekAnchor + preAnchor*）迁成 weeklyRules 链。幂等：跑过的不会再跑一遍。
+// 也处理"loadData 后第一条不是 from=0 / 数组共享 DEFAULT_SETTINGS"等防御性兜底。
+function migrateSettings(s) {
+  if (!s || typeof s !== 'object') return s;
+  if (Array.isArray(s.weeklyRules) && s.weeklyRules.length > 0) {
+    // 已是新格式：深拷贝一份，避免和 DEFAULT_SETTINGS 共享数组；并保证第一条对齐 from=0
+    s.weeklyRules = s.weeklyRules.map((r) => ({ from: r.from, day: r.day, hour: r.hour }));
+    if (s.weeklyRules[0].from !== 0) {
+      s.weeklyRules.unshift({ from: 0, day: s.weeklyResetDay, hour: s.weeklyResetHour });
+    }
+    return s;
+  }
+  // 老格式 → 新格式：史前期取 preAnchor，没存就 fallback 到 weekly*（和老 getWeekStart 兜底一致）
+  const initialDay = s.preAnchorDay != null ? s.preAnchorDay : s.weeklyResetDay;
+  const initialHour = s.preAnchorHour != null ? s.preAnchorHour : s.weeklyResetHour;
+  const rules = [{ from: 0, day: initialDay, hour: initialHour }];
+  if (s.weekAnchor != null) {
+    rules.push({ from: s.weekAnchor, day: s.weeklyResetDay, hour: s.weeklyResetHour });
+  }
+  s.weeklyRules = rules;
+  return s;
+}
+
+// 往规则链末尾追加一条。同一整点重复触发就替换最后一条（避免连点出一堆重复段）；
+// 顺手把 weeklyResetDay/Hour 派生成最新值，给依然按这两个字段读的展示代码用。
+function appendWeeklyRule(settings, rule) {
+  if (!settings.weeklyRules) settings.weeklyRules = [];
+  const rules = settings.weeklyRules;
+  const last = rules[rules.length - 1];
+  if (last && rule.from < last.from) {
+    console.warn('appendWeeklyRule: rule.from 比末尾还早，忽略', rule, last);
+    return;
+  }
+  if (last && last.from === rule.from) {
+    rules[rules.length - 1] = { from: rule.from, day: rule.day, hour: rule.hour };
+  } else {
+    rules.push({ from: rule.from, day: rule.day, hour: rule.hour });
+  }
+  settings.weeklyResetDay = rule.day;
+  settings.weeklyResetHour = rule.hour;
+}
+
+// 把规则链派生成老字段。saveData 写盘前调一次，让万一还在跑旧代码的端
+// （或老格式 import）能照常读到 weekAnchor/preAnchor*；新代码自己只看 weeklyRules。
+function deriveLegacyFields(settings) {
+  const rules = settings && settings.weeklyRules;
+  if (!Array.isArray(rules) || rules.length === 0) return;
+  const last = rules[rules.length - 1];
+  settings.weeklyResetDay = last.day;
+  settings.weeklyResetHour = last.hour;
+  if (rules.length >= 2) {
+    const prev = rules[rules.length - 2];
+    settings.weekAnchor = last.from;
+    settings.preAnchorDay = prev.day;
+    settings.preAnchorHour = prev.hour;
+  } else {
+    settings.weekAnchor = null;
+    settings.preAnchorDay = null;
+    settings.preAnchorHour = null;
+  }
+}
+
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -90,6 +152,7 @@ function loadData() {
 
 function saveData() {
   try {
+    deriveLegacyFields(state.settings);
     const payload = {
       records: state.records,
       notes: state.notes,
@@ -148,36 +211,39 @@ function getWeekStartByDayHour(ts, day, hour) {
   return result.getTime();
 }
 
-// 给定一个时间戳，判断属于哪一周。有 anchor 时分段算：
-// - anchor 及之后：以 anchor 为起点按 7 天段切（新一周从改设置那一刻开始）
-// - anchor 之前：按"改 anchor 之前"的旧 day/hour 规则切（保持历史周原来的样子）
-// 这样用户按 ◀ 翻回去看以前的周，还是按原来的星期几切，不会被新规则搅乱。
+// 给定一个时间戳，按 weeklyRules 时间线判断属于哪一周。
+// 找到 ts 所在的那一段（最后一条 from <= ts 的规则）：
+// - 若是史前期（rules[0]，from===0）：按 day/hour 规则切；
+// - 若是某次切换之后的段：按 r.from 起每 7 天一轮切。
+// 翻 ◀ 跨过 anchor 时会自动落到上一段对应的边界，保持历史周原来的样子。
 function getWeekStart(ts, settings) {
-  const anchor = settings.weekAnchor;
-  if (anchor != null) {
-    if (ts >= anchor) {
-      const diff = ts - anchor;
-      const weeksSince = Math.floor(diff / (7 * ONE_DAY_MS));
-      return anchor + weeksSince * 7 * ONE_DAY_MS;
-    }
-    // 历史周：用 anchor 设立之前的 day/hour 切。如果没存旧值（比如老用户数据
-    // 里没 preAnchor 字段），兜底用当前 day/hour，至少不崩。
-    const oldDay = settings.preAnchorDay != null ? settings.preAnchorDay : settings.weeklyResetDay;
-    const oldHour = settings.preAnchorHour != null ? settings.preAnchorHour : settings.weeklyResetHour;
-    return getWeekStartByDayHour(ts, oldDay, oldHour);
+  const rules = settings && Array.isArray(settings.weeklyRules) ? settings.weeklyRules : null;
+  if (!rules || rules.length === 0) {
+    // 兜底：理论上 migrateSettings 已经保证不会跑到这里
+    return getWeekStartByDayHour(ts, settings.weeklyResetDay, settings.weeklyResetHour);
   }
-  return getWeekStartByDayHour(ts, settings.weeklyResetDay, settings.weeklyResetHour);
+  let idx = 0;
+  for (let i = 0; i < rules.length; i++) {
+    if (rules[i].from <= ts) idx = i;
+    else break;
+  }
+  const r = rules[idx];
+  if (idx === 0) {
+    return getWeekStartByDayHour(ts, r.day, r.hour);
+  }
+  const diff = ts - r.from;
+  const weeksSince = Math.floor(diff / (7 * ONE_DAY_MS));
+  return r.from + weeksSince * 7 * ONE_DAY_MS;
 }
 
-// 当前周的结束时间。一般就是 weekStart + 7 天，但有两种例外：
-// - 如果这一周完全在 anchor 之前（weekStart + 7d <= anchor）：正常 +7 天
-// - 如果这一周跨过了 anchor（weekStart < anchor < weekStart + 7d）：end 被 anchor 截断
-//   这样历史周的最后一周不会穿到 anchor 之后的"新一周"里
+// 当前周的结束时间。正常是 weekStart + 7 天，但如果本周跨过了"下一段规则的起点"，
+// 就截断到那一段的 from——这样上一段最后一周不会穿到下一段的"新一周"里。
 function getWeekEnd(weekStart, settings) {
   const raw = weekStart + 7 * ONE_DAY_MS;
-  if (settings && settings.weekAnchor != null) {
-    const anchor = settings.weekAnchor;
-    if (weekStart < anchor && raw > anchor) return anchor;
+  const rules = settings && Array.isArray(settings.weeklyRules) ? settings.weeklyRules : null;
+  if (!rules) return raw;
+  for (const r of rules) {
+    if (weekStart < r.from && raw > r.from) return r.from;
   }
   return raw;
 }
@@ -1699,18 +1765,21 @@ async function markWeeklyResetNow() {
   const anchorTs = floorToHour(Date.now());
   const anchorD = new Date(anchorTs);
 
-  // preAnchor 是"anchor 之前的旧规则"快照，已存就不覆盖（保留更早的初始规则）
-  if (state.settings.preAnchorDay == null) {
-    state.settings.preAnchorDay = state.settings.weeklyResetDay;
-    state.settings.preAnchorHour = state.settings.weeklyResetHour;
-  }
-
-  // day/hour 同步覆盖成此刻对应的值——这一行显示的就是"现在每周何时重置"的事实
-  state.settings.weeklyResetDay = anchorD.getDay();
-  state.settings.weeklyResetHour = anchorD.getHours();
-  state.settings.weekAnchor = anchorTs;
+  // 往规则链末尾追加一条新规则——之前那一段的 day/hour 自动留在 rules[len-2]，
+  // 翻 ◀ 时上一段会按"重置前那一刻的真实规则"切，不会被锁死成史前期那条老规则。
+  appendWeeklyRule(state.settings, {
+    from: anchorTs,
+    day: anchorD.getDay(),
+    hour: anchorD.getHours(),
+  });
   state.settings.lastModifiedAt = Date.now();
   state.selectedWeekStart = null;
+
+  // 同步回 input 控件——关面板时 closeSettings 会读它们写回 state，不同步就会被旧值反向覆盖。
+  const dayInput = $('#setting-weekly-day');
+  const hourInput = $('#setting-weekly-hour');
+  if (dayInput) dayInput.value = state.settings.weeklyResetDay;
+  if (hourInput) hourInput.value = state.settings.weeklyResetHour;
 
   // —— 播 "消解 → 脉动 → 🌱 → 浮入 → 气泡" 五段动画 ——
   const dayEl = $('#reset-stat-day');
@@ -1744,32 +1813,22 @@ function closeSettings() {
   // 高峰相关字段不再读取——按官方公告内置、跟着 DST 自动算
   const oldDay = state.settings.weeklyResetDay;
   const oldHour = state.settings.weeklyResetHour;
-  state.settings.weeklyResetDay = parseInt($('#setting-weekly-day').value, 10);
-  state.settings.weeklyResetHour = parseInt($('#setting-weekly-hour').value, 10);
+  const newDay = parseInt($('#setting-weekly-day').value, 10);
+  const newHour = parseInt($('#setting-weekly-hour').value, 10);
 
-  const anySettingChanged =
-    state.settings.weeklyResetDay !== oldDay ||
-    state.settings.weeklyResetHour !== oldHour;
-  if (anySettingChanged) {
-    state.settings.lastModifiedAt = Date.now();
-  }
-
-  // 用户真的改了周起点（day 或 hour）→ 钉一个 anchor：
-  // 从这一刻起就是"新一周"，之前的记录自动归入上一周。
+  // 用户真的改了周起点（day 或 hour）→ 往规则链末尾追加一条：
+  // 从这一刻起就是"新一周"，之前的记录按上一段规则的边界自动归位。
   // 高峰设置和周起点无关，所以改高峰时不触发。
-  const weeklyChanged =
-    state.settings.weeklyResetDay !== oldDay ||
-    state.settings.weeklyResetHour !== oldHour;
+  const weeklyChanged = newDay !== oldDay || newHour !== oldHour;
   if (weeklyChanged) {
-    // 先把"改之前那套规则"快照下来，留给 anchor 之前的历史周用——
-    // 如果 settings 里本来就有 preAnchor（说明之前也改过），保留原始的
-    // 那次初始 preAnchor 没必要再覆盖；但为了避免多次改后规则链断裂，
-    // 每次改都按"改前的那一刻的 day/hour"更新 preAnchor。
-    // 这意味着如果用户连续改了两次，中间那段用的是第二次改之前的规则，
-    // 第一次改之前的更老规则会丢——这个是克克刻意取的简化（避免完整规则链）。
-    state.settings.preAnchorDay = oldDay;
-    state.settings.preAnchorHour = oldHour;
-    state.settings.weekAnchor = Date.now();
+    // from 钉到整点，跟 markWeeklyResetNow 保持一致——避免显示的"周X HH:00"
+    // 和实际节奏差几十分钟
+    appendWeeklyRule(state.settings, {
+      from: floorToHour(Date.now()),
+      day: newDay,
+      hour: newHour,
+    });
+    state.settings.lastModifiedAt = Date.now();
     // 周起点变了，"正在看的是哪一周"这个选中状态也失效——重置回"本周"
     state.selectedWeekStart = null;
     // 输入卡的 prevWeekly / isNewWeek 需要立刻按新规则重算，
@@ -1821,6 +1880,7 @@ function importJSON(file) {
         state.records = data.records;
         state.notes = data.notes || {};
         state.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+        migrateSettings(state.settings);
         // 导入的也可能是旧格式，统一迁移一遍
         migrateNotesToRecords();
         saveData();
@@ -1863,6 +1923,8 @@ async function clearAllData() {
   state.records = [];
   state.notes = {};
   state.settings = { ...DEFAULT_SETTINGS };
+  // DEFAULT_SETTINGS 里的 weeklyRules 是共享数组，这里 migrate 顺手深拷贝一份
+  migrateSettings(state.settings);
   state.selectedHistoryWindowId = null;
   state.selectedWeekStart = null;
   saveData();
@@ -2149,6 +2211,8 @@ async function syncPull(silent) {
     state.records = merged.records;
     state.notes = merged.notes || {};
     state.settings = { ...DEFAULT_SETTINGS, ...(merged.settings || {}) };
+    // 云端可能是老格式（没 weeklyRules）或来自另一台已经升级的设备，统一过一遍 migrate
+    migrateSettings(state.settings);
 
     // 云端数据合并进来后，输入卡的 draft 状态（上次值、当前窗口 ID 等）
     // 是基于"旧 records"算的，已经过时了。重算 draft，让 renderAll() 看到最新状态。
@@ -2811,9 +2875,10 @@ function bindEvents() {
       const now = Date.now();
       const currentWeekStart = getWeekStart(now, state.settings);
       const viewing = state.selectedWeekStart != null ? state.selectedWeekStart : currentWeekStart;
-      // 同上：用 getWeekStart 规范化到"下一周"真正的 weekStart，
-      // 跨 anchor 往前翻时自动落到 anchor（新规则的第一周起点）
-      const next = getWeekStart(viewing + 7 * ONE_DAY_MS, state.settings);
+      // 用 getWeekEnd 当下一段起点：普通周等于 viewing+7d，碰到 weeklyRules 段
+      // 交界时它会自动落在下一段的 from。早先用 viewing+7d→getWeekStart 会跳过
+      // 中间被截短的那一段（比如 5/2~5/4 → 直接跳到本周，越过 5/4~5/6）。
+      const next = getWeekEnd(viewing, state.settings);
       if (next >= currentWeekStart) {
         state.selectedWeekStart = null; // 回到当前周
       } else {
@@ -3003,6 +3068,9 @@ function init() {
     state.notes = data.notes || {};
     state.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
   }
+  // 老数据可能没有 weeklyRules（旧格式 weekAnchor + preAnchor*），统一迁一遍。
+  // 全新安装也走一次，让 weeklyRules 数组从 DEFAULT_SETTINGS 共享引用变成自家的副本。
+  migrateSettings(state.settings);
 
   // 旧数据兼容：把窗口级备注迁到记录上
   migrateNotesToRecords();
