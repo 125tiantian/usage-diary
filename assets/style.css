@@ -2606,6 +2606,19 @@ body.is-ready .input-card {
   border-top: 1px solid var(--c-divider);
 }
 
+/* footer 里的版本号，独立成一个小胶囊更醒目 */
+.settings-version {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--c-divider);
+  color: var(--text-2, var(--text-mute));
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
 /* sync-card：状态条 + 操作行 */
 .sync-card {
   background: linear-gradient(135deg, var(--c-weekly-soft) 0%, var(--bg-card) 70%);
