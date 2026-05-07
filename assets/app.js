@@ -2866,9 +2866,10 @@ function bindEvents() {
       const now = Date.now();
       const currentWeekStart = getWeekStart(now, state.settings);
       const viewing = state.selectedWeekStart != null ? state.selectedWeekStart : currentWeekStart;
-      // 同上：用 getWeekStart 规范化到"下一周"真正的 weekStart，
-      // 跨 anchor 往前翻时自动落到 anchor（新规则的第一周起点）
-      const next = getWeekStart(viewing + 7 * ONE_DAY_MS, state.settings);
+      // 用 getWeekEnd 当下一段起点：普通周等于 viewing+7d，碰到 weeklyRules 段
+      // 交界时它会自动落在下一段的 from。早先用 viewing+7d→getWeekStart 会跳过
+      // 中间被截短的那一段（比如 5/2~5/4 → 直接跳到本周，越过 5/4~5/6）。
+      const next = getWeekEnd(viewing, state.settings);
       if (next >= currentWeekStart) {
         state.selectedWeekStart = null; // 回到当前周
       } else {
