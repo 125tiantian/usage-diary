@@ -211,6 +211,22 @@ function getWeekStartByDayHour(ts, day, hour) {
   return result.getTime();
 }
 
+// 给"现在"和一个目标 (day, hour)，算出下一次落在该时刻的整点时间戳。
+// 用于 closeSettings：用户改周重置规则时，新规则应当从下一个目标时刻开始生效，
+// 而不是"现在"——这样本周自然延续到目标时刻，显示和实际重置时刻能对齐。
+// 当前正好就在目标时刻（同 day 同 hour 整点）时，按"已经过这一刻"算，跳到下周。
+function nextOccurrence(now, targetDay, targetHour) {
+  const d = new Date(now);
+  const wd = d.getDay();
+  const h = d.getHours();
+  let daysAhead = (targetDay - wd + 7) % 7;
+  if (daysAhead === 0 && h >= targetHour) daysAhead = 7;
+  const result = new Date(d);
+  result.setDate(d.getDate() + daysAhead);
+  result.setHours(targetHour, 0, 0, 0);
+  return result.getTime();
+}
+
 // 给定一个时间戳，按 weeklyRules 时间线判断属于哪一周。
 // 找到 ts 所在的那一段（最后一条 from <= ts 的规则）：
 // - 若是史前期（rules[0]，from===0）：按 day/hour 规则切；
@@ -1812,19 +1828,27 @@ function closeSettings() {
   const newDay = parseInt($('#setting-weekly-day').value, 10);
   const newHour = parseInt($('#setting-weekly-hour').value, 10);
 
-  // 用户真的改了周起点（day 或 hour）→ 往规则链末尾追加一条：
-  // 从这一刻起就是"新一周"，之前的记录按上一段规则的边界自动归位。
+  // 用户真的改了周起点（day 或 hour）→ 让新规则从"下一个目标时刻"起生效，
+  // 而不是"改设置那一刻"——这样本周自然延续到目标时刻，显示的"周X · HH:00"和
+  // 实际重置时刻一致；之前的记录仍归在本周内。
+  // 想立刻重置请按"立即重置"按钮（markWeeklyResetNow 才用 from = now 的语义）。
   // 高峰设置和周起点无关，所以改高峰时不触发。
   const weeklyChanged = newDay !== oldDay || newHour !== oldHour;
   if (weeklyChanged) {
-    // from 钉到整点，跟 markWeeklyResetNow 保持一致——避免显示的"周X HH:00"
-    // 和实际节奏差几十分钟
-    appendWeeklyRule(state.settings, {
-      from: floorToHour(Date.now()),
-      day: newDay,
-      hour: newHour,
-    });
-    state.settings.lastModifiedAt = Date.now();
+    const now = Date.now();
+    const targetFrom = nextOccurrence(now, newDay, newHour);
+    const rules = state.settings.weeklyRules;
+    const last = rules && rules.length > 0 ? rules[rules.length - 1] : null;
+    if (last && last.from > now) {
+      // 末条规则还没生效（上次改设置/未来 anchor 还挂着）→ 替换，不追加，
+      // 避免链上堆一串都没生效过的"幽灵规则"
+      rules[rules.length - 1] = { from: targetFrom, day: newDay, hour: newHour };
+      state.settings.weeklyResetDay = newDay;
+      state.settings.weeklyResetHour = newHour;
+    } else {
+      appendWeeklyRule(state.settings, { from: targetFrom, day: newDay, hour: newHour });
+    }
+    state.settings.lastModifiedAt = now;
     // 周起点变了，"正在看的是哪一周"这个选中状态也失效——重置回"本周"
     state.selectedWeekStart = null;
     // 输入卡的 prevWeekly / isNewWeek 需要立刻按新规则重算，
