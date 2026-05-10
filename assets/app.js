@@ -2763,6 +2763,10 @@ function bindEvents() {
     });
   });
 
+  // 小时步进件 + 历史挑选弹层（5h 窗口 / Weekly）
+  bindHourSteppers();
+  bindPicker();
+
   // 键盘 ↑↓ 调整 5h
   document.addEventListener('keydown', (e) => {
     if (e.target.matches('textarea, input')) return;
@@ -3049,6 +3053,241 @@ function setupScrollReveal() {
   });
   document.querySelectorAll('.scroll-reveal').forEach((el) => {
     observer.observe(el);
+  });
+}
+
+/* =================================================
+   14. 小时步进件 + 历史挑选弹层
+   ================================================= */
+
+// 把 0–23 的小时数循环增减：23→0、0→23，符合用户对"小时是个圆环"的直觉
+function stepHourValue(input, delta) {
+  let v = parseInt(input.value, 10);
+  if (isNaN(v)) v = 0;
+  v = ((v + delta) % 24 + 24) % 24;
+  input.value = v;
+  // 触发 input/change 事件，让任何监听者（含未来加的）能感知到值变了
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function bindHourSteppers() {
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-hour-step]');
+    if (!btn) return;
+    const wrap = btn.closest('[data-hour-stepper]');
+    const input = wrap && wrap.querySelector('input[type="number"]');
+    if (!input) return;
+    const step = parseInt(btn.dataset.hourStep, 10) || 0;
+    stepHourValue(input, step);
+    // 给按钮一个轻反馈（复用现有 stepTap 风格的 :active 缩放就够，无需额外 class）
+  });
+}
+
+// —— 历史挑选弹层 —— 点击 5h 历史标题 / Weekly 周标题，弹出可滚动列表，直接跳到对应项
+let pickerLastTrigger = null;
+
+function openPicker(kind) {
+  const mask = $('#picker-mask');
+  const titleEl = $('#picker-title');
+  const list = $('#picker-list');
+  if (!mask || !titleEl || !list) return;
+
+  let items = [];
+  if (kind === 'window') {
+    titleEl.textContent = '挑一个 5h 窗口';
+    items = buildWindowPickerItems();
+  } else if (kind === 'week') {
+    titleEl.textContent = '挑一周';
+    items = buildWeekPickerItems();
+  }
+  if (items.length === 0) {
+    list.innerHTML = `<div class="picker-empty">还没有可挑的～</div>`;
+  } else {
+    list.innerHTML = items.map((it) => {
+      const cls = 'picker-item picker-item--' + kind + (it.isSelected ? ' is-selected' : '') + (it.isCurrent ? ' is-current' : '');
+      return `<button type="button" class="${cls}" data-pick="${it.value}">
+        <span class="picker-item-main">
+          <span class="picker-item-title">${it.title}</span>
+          ${it.tag ? `<span class="picker-item-tag">${it.tag}</span>` : ''}
+        </span>
+        <span class="picker-item-meta">${it.meta || ''}</span>
+      </button>`;
+    }).join('');
+  }
+
+  mask.dataset.pickerKind = kind;
+  mask.classList.remove('is-closing');
+  mask.hidden = false;
+
+  // 滚动到当前选中项，让用户一打开就看到自己当前在哪
+  requestAnimationFrame(() => {
+    const sel = list.querySelector('.picker-item.is-selected');
+    if (sel) sel.scrollIntoView({ block: 'center' });
+  });
+}
+
+function closePicker() {
+  const mask = $('#picker-mask');
+  if (!mask || mask.hidden) return;
+  mask.classList.add('is-closing');
+  const onEnd = (e) => {
+    if (e.target !== mask || e.animationName !== 'fadeOut') return;
+    mask.hidden = true;
+    mask.classList.remove('is-closing');
+    mask.removeEventListener('animationend', onEnd);
+    if (pickerLastTrigger) {
+      try { pickerLastTrigger.focus({ preventScroll: true }); } catch (_) {}
+      pickerLastTrigger = null;
+    }
+  };
+  mask.addEventListener('animationend', onEnd);
+}
+
+function buildWindowPickerItems() {
+  const windows = computeWindows(state.records);
+  const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  // 倒序：最近的窗口排最上面
+  return windows.slice().reverse().map((w) => {
+    const startD = new Date(w.startTime);
+    const endD = new Date(w.endTime);
+    const isActive = Date.now() < w.endTime;
+    const isPeak = isPeakHour(w.startTime);
+    const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
+    const title = `${dateStr} ${pad(startD.getHours())}:00–${pad(endD.getHours())}:00${isPeak ? ' 🔥' : ''}`;
+    const tag = isActive ? '<span class="picker-tag picker-tag--live">进行中</span>' : '';
+    const meta = `${w.lastValue}% · ${w.records.length} 条`;
+    return {
+      value: String(w.id),
+      title,
+      tag,
+      meta,
+      isSelected: w.id === state.selectedHistoryWindowId,
+      isCurrent: isActive,
+    };
+  });
+}
+
+function buildWeekPickerItems() {
+  const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  const now = Date.now();
+  const currentWeekStart = getWeekStart(now, state.settings);
+  const earliest = state.records.length > 0 ? state.records[0].timestamp : currentWeekStart;
+  // 从当前周往回收集所有"碰到过"的周——能跨 weeklyRules 段，规则之间被截短的残缺周也都收上
+  const weekStarts = [];
+  let cursor = currentWeekStart;
+  // 安全上限：最多收集 520 周（10 年），防 weeklyRules 异常导致死循环
+  for (let i = 0; i < 520; i++) {
+    weekStarts.push(cursor);
+    if (cursor <= earliest) break;
+    const prev = getWeekStart(cursor - 1, state.settings);
+    if (prev >= cursor) break; // 兜底防呆
+    cursor = prev;
+  }
+  // weekStarts 已经是新→旧（最新在前）
+
+  // 预先把 weekly 末值算好，避免每周都重扫一遍
+  const records = state.records;
+  return weekStarts.map((ws) => {
+    const we = getWeekEnd(ws, state.settings);
+    const isCurrent = ws === currentWeekStart;
+    const wsD = new Date(ws);
+    const weD = new Date(we - 1);
+    const sameMonth = wsD.getMonth() === weD.getMonth();
+    const range = sameMonth
+      ? `${wsD.getMonth() + 1}/${wsD.getDate()}–${weD.getDate()}`
+      : `${wsD.getMonth() + 1}/${wsD.getDate()}–${weD.getMonth() + 1}/${weD.getDate()}`;
+    const title = isCurrent ? '本周' : range;
+    const tag = isCurrent ? '<span class="picker-tag picker-tag--live">本周</span>' : `<span class="picker-tag picker-tag--soft">周${dayNames[wsD.getDay()]}起</span>`;
+    // 这周末值：取在 [ws, we) 区间的最后一笔记录的 weekly
+    let last = null;
+    for (let i = records.length - 1; i >= 0; i--) {
+      const r = records[i];
+      if (r.timestamp < ws) break;
+      if (r.timestamp >= ws && r.timestamp < we) { last = r; break; }
+    }
+    const meta = last ? `${last.weekly}% · ${countRecordsInRange(records, ws, we)} 条` : '没记录';
+    return {
+      value: isCurrent ? '__current__' : String(ws),
+      title,
+      tag,
+      meta,
+      isSelected: isCurrent
+        ? state.selectedWeekStart == null
+        : state.selectedWeekStart === ws,
+      isCurrent,
+    };
+  });
+}
+
+function countRecordsInRange(records, fromTs, toTs) {
+  let c = 0;
+  for (let i = records.length - 1; i >= 0; i--) {
+    const r = records[i];
+    if (r.timestamp < fromTs) break;
+    if (r.timestamp >= fromTs && r.timestamp < toTs) c++;
+  }
+  return c;
+}
+
+function pickWindowFromList(idStr) {
+  const id = parseInt(idStr, 10);
+  const windows = computeWindows(state.records);
+  if (!windows.find((w) => w.id === id)) return;
+  if (id === state.selectedHistoryWindowId) return;
+  state.adjustOpen = false;
+  crossFadeChart($('.window-chart-wrap'), () => {
+    state.selectedHistoryWindowId = id;
+    renderHistory();
+  });
+}
+
+function pickWeekFromList(value) {
+  const now = Date.now();
+  const currentWeekStart = getWeekStart(now, state.settings);
+  const target = value === '__current__' ? null : parseInt(value, 10);
+  // 已经选中的就别白翻一次图
+  const sameAsCurrent = target == null && state.selectedWeekStart == null;
+  const sameAsOther = target != null && state.selectedWeekStart === target;
+  if (sameAsCurrent || sameAsOther) return;
+  crossFadeChart($('.weekly-chart-wrap'), () => {
+    state.selectedWeekStart = target == null || target === currentWeekStart ? null : target;
+    renderWeeklyChart('rebuild');
+  });
+}
+
+function bindPicker() {
+  // 点标题打开
+  document.addEventListener('click', (e) => {
+    const trigger = e.target.closest('[data-picker]');
+    if (trigger) {
+      pickerLastTrigger = trigger;
+      openPicker(trigger.dataset.picker);
+      return;
+    }
+    // 列表项
+    const item = e.target.closest('[data-pick]');
+    if (item && $('#picker-mask').contains(item)) {
+      const kind = $('#picker-mask').dataset.pickerKind;
+      const v = item.dataset.pick;
+      closePicker();
+      if (kind === 'window') pickWindowFromList(v);
+      else if (kind === 'week') pickWeekFromList(v);
+      return;
+    }
+  });
+
+  // 关闭按钮 + 点遮罩
+  const closeBtn = $('#picker-close');
+  if (closeBtn) closeBtn.addEventListener('click', closePicker);
+  const mask = $('#picker-mask');
+  if (mask) mask.addEventListener('click', (e) => {
+    if (e.target === mask) closePicker();
+  });
+
+  // ESC 关闭
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('#picker-mask').hidden) closePicker();
   });
 }
 

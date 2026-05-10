@@ -246,7 +246,7 @@
           <span>Weekly 节奏</span>
           <span class="weekly-nav">
             <button class="nav-btn" id="prev-week-btn">◀</button>
-            <span class="weekly-nav-title" id="weekly-nav-title">本周</span>
+            <button class="picker-trigger weekly-nav-title" id="weekly-nav-title" type="button" data-picker="week">本周</button>
             <button class="nav-btn" id="next-week-btn">▶</button>
           </span>
         </div>
@@ -270,7 +270,7 @@
       <div class="history-detail">
         <div class="history-nav">
           <button class="nav-btn" id="prev-window-btn">◀</button>
-          <span class="history-title" id="history-title">—</span>
+          <button class="picker-trigger history-title" id="history-title" type="button" data-picker="window">—</button>
           <button class="nav-btn" id="next-window-btn">▶</button>
         </div>
 
@@ -288,7 +288,11 @@
               </label>
               <label class="adjust-label">
                 <span>时</span>
-                <input type="number" id="adjust-hour" min="0" max="23">
+                <span class="hour-stepper" data-hour-stepper>
+                  <button type="button" class="hour-stepper-btn" data-hour-step="-1" aria-label="减一小时">−</button>
+                  <input type="number" id="adjust-hour" min="0" max="23" inputmode="numeric">
+                  <button type="button" class="hour-stepper-btn" data-hour-step="1" aria-label="加一小时">+</button>
+                </span>
               </label>
             </div>
             <div class="adjust-actions">
@@ -377,7 +381,11 @@
                     </select>
                   </label>
                   <label>
-                    <input type="number" id="setting-weekly-hour" min="0" max="23" value="18">
+                    <span class="hour-stepper" data-hour-stepper>
+                      <button type="button" class="hour-stepper-btn" data-hour-step="-1" aria-label="减一小时">−</button>
+                      <input type="number" id="setting-weekly-hour" min="0" max="23" value="18" inputmode="numeric">
+                      <button type="button" class="hour-stepper-btn" data-hour-step="1" aria-label="加一小时">+</button>
+                    </span>
                     点重置
                   </label>
                 </div>
@@ -528,6 +536,17 @@
 
   <!-- 保存成功的小提示 -->
   <div class="toast" id="toast" hidden></div>
+
+  <!-- 历史挑选弹层（5h 窗口 / Weekly 周共用） -->
+  <div class="picker-mask" id="picker-mask" hidden>
+    <div class="picker" id="picker-card">
+      <div class="picker-head">
+        <span class="picker-title" id="picker-title">挑一个</span>
+        <button class="icon-btn picker-close" id="picker-close" aria-label="关闭">✕</button>
+      </div>
+      <div class="picker-list" id="picker-list"></div>
+    </div>
+  </div>
 
   <script src="assets/app.js"></script>
 </body>
