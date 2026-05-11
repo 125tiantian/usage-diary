@@ -2987,3 +2987,305 @@ body.is-ready .input-card {
 .settings-switch input:checked + .settings-switch-track::after {
   transform: translateX(16px);
 }
+
+/* ============ 14. 小时步进件（[−][12][+] 循环 0↔23） ============
+   adjust 面板里"挪窗口起点"的小时、设置卡里"周重置"的小时都用它，
+   手机上没原生 spinner 也能一点就调。 */
+.hour-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg-card);
+  border: 1px solid var(--c-divider);
+  border-radius: 10px;
+  vertical-align: middle;
+}
+
+.hour-stepper input[type="number"] {
+  width: 38px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  outline: none;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+/* 干掉浏览器自带的上下小箭头——避免和我们自己的步进按钮视觉打架 */
+.hour-stepper input[type="number"]::-webkit-inner-spin-button,
+.hour-stepper input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.hour-stepper-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: var(--bg-soft);
+  color: var(--text-secondary);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    background 0.15s var(--ease-soft),
+    color 0.15s var(--ease-soft),
+    transform 0.18s var(--ease-bounce);
+}
+
+.hour-stepper-btn:hover {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+}
+
+.hour-stepper-btn:active {
+  transform: scale(0.9);
+}
+
+/* 设置卡里"周重置"那块用 weekly 绿调，跟它的语义对齐 */
+.reset-card .hour-stepper-btn:hover {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
+}
+
+/* ============ 15. 历史挑选触发器 + 弹层 ============
+   点击 5h 历史标题 / Weekly 周标题 → 弹出可滚动列表，直接跳到目标项。
+   保留原有 ◀▶ 翻页，挑选器只是补一种"长跳"路径。 */
+.picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 0.18s var(--ease-soft),
+    color 0.18s var(--ease-soft);
+}
+
+.picker-trigger::after {
+  content: '▾';
+  font-size: 0.7em;
+  color: var(--text-mute);
+  margin-left: 6px;
+  transition: color 0.18s var(--ease-soft);
+}
+
+.picker-trigger:hover {
+  background: var(--bg-soft);
+}
+
+.picker-trigger:hover::after,
+.picker-trigger:focus-visible::after {
+  color: var(--c-5h-deep);
+}
+
+.weekly-nav-title.picker-trigger:hover::after,
+.weekly-nav-title.picker-trigger:focus-visible::after {
+  color: var(--c-weekly-deep);
+}
+
+/* 弹层遮罩 + 卡片 —— 复用 settings 弹窗的开/关动画语言，但更轻 */
+.picker-mask {
+  position: fixed;
+  inset: 0;
+  background: var(--modal-mask-bg);
+  backdrop-filter: blur(4px);
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.22s var(--ease-soft);
+}
+
+.picker-mask[hidden] {
+  display: none;
+}
+
+.picker-mask.is-closing {
+  animation: fadeOut 0.22s var(--ease-soft) forwards;
+}
+
+.picker-mask.is-closing .picker {
+  animation: slideDown 0.22s var(--ease-soft) forwards;
+}
+
+.picker {
+  background: var(--bg-card);
+  border-radius: var(--radius-card);
+  width: 360px;
+  max-width: 92vw;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(74, 63, 53, 0.2);
+  animation: slideUp 0.24s var(--ease-soft);
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--c-divider);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.picker-close {
+  width: 30px;
+  height: 30px;
+}
+
+.picker-list {
+  overflow-y: auto;
+  padding: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 110, 100, 0.25) transparent;
+}
+
+.picker-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.picker-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.picker-list::-webkit-scrollbar-thumb {
+  background: rgba(120, 110, 100, 0.22);
+  border-radius: 3px;
+}
+
+.picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text-primary);
+  transition: background 0.15s var(--ease-soft), color 0.15s var(--ease-soft);
+}
+
+.picker-item + .picker-item {
+  margin-top: 2px;
+}
+
+.picker-item:hover {
+  background: var(--bg-soft);
+}
+
+/* 当前选中：5h 用蜜桃橘调、Weekly 用鼠尾草绿调，分别对齐两边的主题色 */
+.picker-item--window.is-selected {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+}
+.picker-item--week.is-selected {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
+}
+
+.picker-item-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.picker-item-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.picker-item-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.picker-item.is-selected .picker-item-meta {
+  color: inherit;
+  opacity: 0.82;
+}
+
+.picker-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-mute);
+}
+
+.picker-tag--live {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+}
+
+.picker-item--week .picker-tag--live {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
+}
+
+/* 选中态下"进行中"标签反向，避免颜色和卡片底色撞糊在一起 */
+.picker-item.is-selected .picker-tag--live {
+  background: rgba(255, 255, 255, 0.55);
+  color: inherit;
+}
+
+.picker-tag--soft {
+  background: transparent;
+  color: var(--text-mute);
+  font-weight: 500;
+  padding: 2px 6px;
+}
+
+.picker-empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-mute);
+}
+
+/* 手机：挑选弹层贴边一些，列表项也紧凑一档 */
+@media (max-width: 640px) {
+  .picker {
+    width: 92vw;
+    max-height: 75vh;
+  }
+  .picker-item {
+    padding: 10px 10px;
+  }
+  .picker-item-title {
+    font-size: 13px;
+  }
+  .picker-item-meta {
+    font-size: 11.5px;
+  }
+}
