@@ -2467,24 +2467,21 @@ body.is-ready .input-card {
      均分到"标题和数字之间"+"按钮和底部之间"两个气孔。子卡越高气孔越大、
      但由于上限 360 封死，气孔不会超过 ~75px，不会回到"细长鬼影"的状态。
      ↑XX 那个 marker label 仍然需要 bar-track 留一段 margin-bottom 给它。 */
-  /* 手机端布局思路：
-     - 数字紧贴 label 往上靠（margin-top 给个小固定值）
-     - 进度条 + ↑XX marker 紧跟数字
-     - 步进按钮用 margin-top: auto 吸收剩余空间，整体推到卡片底部
-     这样空气全部落到"进度条 marker → 按钮"之间，不会再有"按钮卡中间、底部留一大坨空"的别扭样式 */
+  /* 手机端：剩余高度对半摊到"label 上方"和"stepper-row 下方"两个气孔，
+     让 label / 数字 / 进度条 / 按钮自然落在卡片中段，不再人为把按钮顶到底或把数字钉到顶。 */
   .input-sub > .big-number {
-    margin-top: 4px;
+    margin-top: auto;
     margin-bottom: 0;
   }
 
   .input-sub > .bar-track {
-    margin-top: 8px;
+    margin-top: 10px;
     margin-bottom: clamp(20px, 2.6vh, 26px);
   }
 
   .input-sub > .stepper-row {
-    margin-top: auto;
-    margin-bottom: 4px;
+    margin-top: 12px;
+    margin-bottom: auto;
   }
 
   .input-sub-label {
@@ -2507,9 +2504,9 @@ body.is-ready .input-card {
   }
 
   .stepper-row {
-    /* 横向按钮之间保持紧凑，纵向两排之间多一点透气，让减号排和加号排泾渭分明 */
+    /* 横向按钮间距维持紧凑；两排之间稍微多一点透气 */
     column-gap: 4px;
-    row-gap: 14px;
+    row-gap: 10px;
     margin-top: clamp(8px, 1.2vh, 14px);
   }
 
@@ -2558,7 +2555,7 @@ body.is-ready .input-card {
 
   .stepper-row {
     column-gap: 3px;
-    row-gap: 12px;
+    row-gap: 8px;
   }
 }
 
