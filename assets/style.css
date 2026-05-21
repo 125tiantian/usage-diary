@@ -351,9 +351,13 @@ input, textarea, select {
   transition: box-shadow 0.3s var(--ease-soft), transform 0.3s var(--ease-soft);
 }
 
-.status-card:hover {
-  box-shadow: var(--shadow-hover);
-  transform: translateY(-2px);
+/* 只在真有鼠标指针（PC）的设备上才上 hover 抬升效果。
+   手机触屏会把"点一下"也当作 hover 触发一帧，造成卡片"抽一下"的视觉抖动。 */
+@media (hover: hover) and (pointer: fine) {
+  .status-card:hover {
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+  }
 }
 
 .status-card--5h {
@@ -448,8 +452,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   transition: box-shadow 0.3s var(--ease-soft);
 }
 
-.card:hover {
-  box-shadow: var(--shadow-hover);
+@media (hover: hover) and (pointer: fine) {
+  .card:hover {
+    box-shadow: var(--shadow-hover);
+  }
 }
 
 .card-title {
@@ -843,9 +849,11 @@ body:not(.is-bars-armed) .ring-bar-fill {
   letter-spacing: 1px;
 }
 
-.save-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(245, 166, 120, 0.45);
+@media (hover: hover) and (pointer: fine) {
+  .save-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(245, 166, 120, 0.45);
+  }
 }
 
 .save-btn:active {
@@ -2403,6 +2411,13 @@ body.is-ready .input-card {
   }
 
   /* —— 输入卡 —— */
+  /* 手机端给输入卡换一层更"实"的奶油 / 暖棕背景：
+     夜间模式下原本 --bg-card 跟页面背景差异极弱，到了手机这种小屏更看不出"卡片"的边界。
+     借用 --bg-soft 的暖色，跟桌面端"奶油背景上一张白卡"的层次感对齐。 */
+  .input-card {
+    background: var(--bg-soft);
+  }
+
   .card-title {
     font-size: 14px;
     margin-bottom: 12px;
@@ -2452,9 +2467,11 @@ body.is-ready .input-card {
      均分到"标题和数字之间"+"按钮和底部之间"两个气孔。子卡越高气孔越大、
      但由于上限 360 封死，气孔不会超过 ~75px，不会回到"细长鬼影"的状态。
      ↑XX 那个 marker label 仍然需要 bar-track 留一段 margin-bottom 给它。 */
-  /* 手机端把数字往上靠：去掉 big-number 上方的 auto 间距，
-     让 label → 数字 紧凑一些；剩余空间全部留给 stepper-row 下方，
-     让两排步进按钮整体向中间居中，下边气孔也更舒展。 */
+  /* 手机端布局思路：
+     - 数字紧贴 label 往上靠（margin-top 给个小固定值）
+     - 进度条 + ↑XX marker 紧跟数字
+     - 步进按钮用 margin-top: auto 吸收剩余空间，整体推到卡片底部
+     这样空气全部落到"进度条 marker → 按钮"之间，不会再有"按钮卡中间、底部留一大坨空"的别扭样式 */
   .input-sub > .big-number {
     margin-top: 4px;
     margin-bottom: 0;
@@ -2466,8 +2483,8 @@ body.is-ready .input-card {
   }
 
   .input-sub > .stepper-row {
-    margin-top: 12px;
-    margin-bottom: auto;
+    margin-top: auto;
+    margin-bottom: 4px;
   }
 
   .input-sub-label {
@@ -2490,9 +2507,9 @@ body.is-ready .input-card {
   }
 
   .stepper-row {
-    /* 横向按钮之间保持紧凑，纵向两排之间稍微拉开一点，看着更透气 */
+    /* 横向按钮之间保持紧凑，纵向两排之间多一点透气，让减号排和加号排泾渭分明 */
     column-gap: 4px;
-    row-gap: 10px;
+    row-gap: 14px;
     margin-top: clamp(8px, 1.2vh, 14px);
   }
 
@@ -2541,7 +2558,7 @@ body.is-ready .input-card {
 
   .stepper-row {
     column-gap: 3px;
-    row-gap: 9px;
+    row-gap: 12px;
   }
 }
 
@@ -2621,10 +2638,11 @@ body.is-ready .input-card {
   border-top: 1px solid var(--c-divider);
 }
 
-/* footer 里的版本号，独立成一个小胶囊更醒目 */
+/* footer 里的版本号，独立一行的胶囊 */
 .settings-version {
-  display: inline-block;
-  margin-top: 12px;
+  display: block;
+  width: max-content;
+  margin: 12px auto 0;
   padding: 3px 12px;
   border-radius: 999px;
   background: var(--c-divider);
