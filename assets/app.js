@@ -403,8 +403,6 @@ function getCurrentWindow(windows) {
    4. 汇率计算（以 weekly 跳格为锚点）
    ================================================= */
 
-// 算法详见 _scratch/rate-calc-logic.txt
-
 function median(arr) {
   if (arr.length === 0) return null;
   const sorted = arr.slice().sort((a, b) => a - b);
@@ -977,17 +975,20 @@ function renderRateCard() {
   if (current !== null && weekly !== null) {
     const diff = current - weekly;
     if (diff > weekly * 0.15) {
-      trendEl.textContent = `🔥 比本周均值高 ${Math.round((diff / weekly) * 100)}%`;
+      trendEl.textContent = `🔥 比本周典型值高 ${Math.round((diff / weekly) * 100)}%`;
       trendEl.className = 'rate-trend is-up';
     } else if (diff < -weekly * 0.15) {
-      trendEl.textContent = `🌿 比本周均值低 ${Math.round((-diff / weekly) * 100)}%`;
+      trendEl.textContent = `🌿 比本周典型值低 ${Math.round((-diff / weekly) * 100)}%`;
       trendEl.className = 'rate-trend is-down';
     } else {
-      trendEl.textContent = '☁️ 和本周均值差不多';
+      trendEl.textContent = '☁️ 和本周典型值差不多';
       trendEl.className = 'rate-trend';
     }
-  } else {
+  } else if (samples.length < 3) {
     trendEl.textContent = samples.length > 0 ? `样本不足（${samples.length}/3）` : '等数据中…';
+    trendEl.className = 'rate-trend';
+  } else {
+    trendEl.textContent = '本周还没有样本';
     trendEl.className = 'rate-trend';
   }
 }
@@ -998,24 +999,26 @@ function renderRateTrendChart() {
 
   const samples = computeRateSamples(state.records);
 
-  // 按天分组格成本样本，每天取中位数
+  // 按天分组格成本样本（key 带年份防跨年冲突），每天取中位数
   const byDay = new Map();
   for (const s of samples) {
     const d = new Date(s.timestamp);
-    const dayKey = `${d.getMonth() + 1}/${d.getDate()}`;
+    const dayKey = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
     if (!byDay.has(dayKey)) byDay.set(dayKey, []);
     byDay.get(dayKey).push(s.cost);
   }
 
-  // 始终显示最近 4 天（含今天），没数据的天留空
+  // 始终显示最近 5 天（含今天），没数据的天留空
   const today = new Date();
   const labels = [];
+  const lookupKeys = [];
   for (let d = 4; d >= 0; d--) {
     const dt = new Date(today);
     dt.setDate(dt.getDate() - d);
     labels.push(`${dt.getMonth() + 1}/${dt.getDate()}`);
+    lookupKeys.push(`${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`);
   }
-  const data = labels.map(k => {
+  const data = lookupKeys.map(k => {
     const costs = byDay.get(k);
     if (!costs || costs.length === 0) return null;
     return +median(costs).toFixed(1);
