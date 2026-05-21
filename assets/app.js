@@ -419,41 +419,42 @@ function computeRateSamples(records) {
   const sorted = records.slice().sort((a, b) => a.timestamp - b.timestamp);
   const samples = [];
 
-  // 上一次跳格的记录（格的起点）；初始为第一条记录
   let segStart = sorted[0];
+  let segStartIdx = 0;
 
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
     const cur = sorted[i];
 
-    // weekly 周重置（cur.weekly < prev.weekly）→ 重置起点，不产生样本
     if (cur.weekly < prev.weekly) {
       segStart = cur;
+      segStartIdx = i;
       continue;
     }
 
     const jump = cur.weekly - prev.weekly;
-    if (jump <= 0) continue; // 没跳格
+    if (jump <= 0) continue;
 
-    // 发生了跳格（可能跳 1 格或多格）
     let cost;
     if (cur.windowId === segStart.windowId) {
-      // 同一个 5h 窗口内，直接做差
       cost = cur.fiveH - segStart.fiveH;
     } else {
-      // 跨了桶刷新：(刷新前末条.5h - 起点.5h) + 终点.5h
-      // 找起点所在窗口内的最后一条记录
-      let beforeRefresh5h = segStart.fiveH;
-      for (let j = i - 1; j >= 0; j--) {
-        if (sorted[j].windowId === segStart.windowId) {
-          beforeRefresh5h = sorted[j].fiveH;
-          break;
+      // 跨桶刷新（可能多次），按窗口分段累加
+      cost = 0;
+      let currentWid = segStart.windowId;
+      let segBase = segStart.fiveH;
+      let lastIn = segStart.fiveH;
+      for (let j = segStartIdx + 1; j <= i; j++) {
+        if (sorted[j].windowId !== currentWid) {
+          cost += lastIn - segBase;
+          currentWid = sorted[j].windowId;
+          segBase = 0;
         }
+        lastIn = sorted[j].fiveH;
       }
-      cost = (beforeRefresh5h - segStart.fiveH) + cur.fiveH;
+      cost += lastIn - segBase;
     }
 
-    // 跳了多格时均摊
     if (jump > 1) cost = cost / jump;
 
     if (cost > 0) {
@@ -461,6 +462,7 @@ function computeRateSamples(records) {
     }
 
     segStart = cur;
+    segStartIdx = i;
   }
 
   return samples;

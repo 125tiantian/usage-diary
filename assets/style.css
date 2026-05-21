@@ -79,7 +79,7 @@
   --radius-sub:     16px;
   --radius-btn:     12px;
   --shadow-soft:    0 4px 16px rgba(180, 150, 110, 0.08);
-  --shadow-hover:   0 8px 24px rgba(180, 150, 110, 0.12);
+  --shadow-hover:   0 8px 24px rgba(180, 150, 110, 0.25);
 
   /* gap 和 pad 用 clamp 跟视口高度走，矮视口下自动收紧 */
   --gap-card:       clamp(12px, 1.8vh, 20px);
@@ -180,12 +180,26 @@
 }
 
 html, body {
-  background: var(--bg-page);
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 80% 50% at 10% 15%, rgba(244, 213, 141, 0.25), transparent 70%),
+    radial-gradient(ellipse 60% 70% at 85% 70%, rgba(184, 164, 212, 0.18), transparent 65%),
+    radial-gradient(ellipse 45% 35% at 75% 8%, rgba(232, 156, 126, 0.14), transparent 60%),
+    var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+[data-theme="dark"] body {
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 80% 50% at 10% 15%, rgba(244, 213, 141, 0.10), transparent 70%),
+    radial-gradient(ellipse 60% 70% at 85% 70%, rgba(184, 164, 212, 0.12), transparent 65%),
+    radial-gradient(ellipse 45% 35% at 75% 8%, rgba(232, 156, 126, 0.07), transparent 60%),
+    var(--bg-page);
 }
 
 /* 防抽抽：body 默认透明（在 head 内联样式里设的 opacity:0），
@@ -790,7 +804,7 @@ body:not(.is-bars-armed) .ring-bar-fill {
   font-family: var(--font-hand);
   font-size: 18px;
   color: var(--text-primary);
-  resize: vertical;
+  resize: none;
   /* 比之前 56px 稍舒服一点，但不会撑满 */
   min-height: clamp(72px, 9vh, 100px);
   line-height: 1.4;
@@ -2381,16 +2395,8 @@ body.is-ready .input-card {
   .status-card-meta {
     margin-top: clamp(7px, 1.2vh, 12px);
     font-size: clamp(10.5px, 1.3vh, 12px);
-    gap: 6px;
-    flex-wrap: nowrap;
-    white-space: nowrap;
-    overflow: hidden;
-  }
-
-  .status-card-meta > * {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    gap: 2px 6px;
+    flex-wrap: wrap;
   }
 
   /* —— 输入卡 —— */
