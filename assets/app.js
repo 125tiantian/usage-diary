@@ -1007,11 +1007,18 @@ function renderRateTrendChart() {
     byDay.get(dayKey).push(s.cost);
   }
 
-  const allLabels = Array.from(byDay.keys());
-  const labels = allLabels.slice(-4);
+  // 始终显示最近 4 天（含今天），没数据的天留空
+  const today = new Date();
+  const labels = [];
+  for (let d = 4; d >= 0; d--) {
+    const dt = new Date(today);
+    dt.setDate(dt.getDate() - d);
+    labels.push(`${dt.getMonth() + 1}/${dt.getDate()}`);
+  }
   const data = labels.map(k => {
-    const m = median(byDay.get(k));
-    return m !== null ? +m.toFixed(1) : null;
+    const costs = byDay.get(k);
+    if (!costs || costs.length === 0) return null;
+    return +median(costs).toFixed(1);
   });
 
   const ctx = $('#rate-chart').getContext('2d');

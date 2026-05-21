@@ -1169,7 +1169,7 @@ body:not(.is-bars-armed) .ring-bar-fill {
 .rate-chart-wrap {
   margin-top: auto;
   padding-top: 14px;
-  height: 110px;
+  height: 160px;
   position: relative;
   flex-shrink: 0;
 }
