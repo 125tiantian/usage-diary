@@ -351,13 +351,9 @@ input, textarea, select {
   transition: box-shadow 0.3s var(--ease-soft), transform 0.3s var(--ease-soft);
 }
 
-/* 只在真有鼠标指针（PC）的设备上才上 hover 抬升效果。
-   手机触屏会把"点一下"也当作 hover 触发一帧，造成卡片"抽一下"的视觉抖动。 */
-@media (hover: hover) and (pointer: fine) {
-  .status-card:hover {
-    box-shadow: var(--shadow-hover);
-    transform: translateY(-2px);
-  }
+.status-card:hover {
+  box-shadow: var(--shadow-hover);
+  transform: translateY(-2px);
 }
 
 .status-card--5h {
@@ -452,10 +448,8 @@ body:not(.is-bars-armed) .ring-bar-fill {
   transition: box-shadow 0.3s var(--ease-soft);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .card:hover {
-    box-shadow: var(--shadow-hover);
-  }
+.card:hover {
+  box-shadow: var(--shadow-hover);
 }
 
 .card-title {
@@ -849,11 +843,9 @@ body:not(.is-bars-armed) .ring-bar-fill {
   letter-spacing: 1px;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .save-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 24px rgba(245, 166, 120, 0.45);
-  }
+.save-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(245, 166, 120, 0.45);
 }
 
 .save-btn:active {
@@ -2403,21 +2395,11 @@ body.is-ready .input-card {
   .status-card-meta {
     margin-top: clamp(7px, 1.2vh, 12px);
     font-size: clamp(10.5px, 1.3vh, 12px);
-    /* 手机端把两条 meta 信息拆成两行，5h 和 Weekly 行为一致 */
-    flex-direction: column;
-    align-items: flex-start;
-    justify-content: flex-start;
-    gap: 3px;
+    gap: 2px 6px;
+    flex-wrap: wrap;
   }
 
   /* —— 输入卡 —— */
-  /* 手机端给输入卡换一层更"实"的奶油 / 暖棕背景：
-     夜间模式下原本 --bg-card 跟页面背景差异极弱，到了手机这种小屏更看不出"卡片"的边界。
-     借用 --bg-soft 的暖色，跟桌面端"奶油背景上一张白卡"的层次感对齐。 */
-  .input-card {
-    background: var(--bg-soft);
-  }
-
   .card-title {
     font-size: 14px;
     margin-bottom: 12px;
@@ -2467,8 +2449,6 @@ body.is-ready .input-card {
      均分到"标题和数字之间"+"按钮和底部之间"两个气孔。子卡越高气孔越大、
      但由于上限 360 封死，气孔不会超过 ~75px，不会回到"细长鬼影"的状态。
      ↑XX 那个 marker label 仍然需要 bar-track 留一段 margin-bottom 给它。 */
-  /* 手机端：剩余高度对半摊到"label 上方"和"stepper-row 下方"两个气孔，
-     让 label / 数字 / 进度条 / 按钮自然落在卡片中段，不再人为把按钮顶到底或把数字钉到顶。 */
   .input-sub > .big-number {
     margin-top: auto;
     margin-bottom: 0;
@@ -2504,9 +2484,7 @@ body.is-ready .input-card {
   }
 
   .stepper-row {
-    /* 横向按钮间距维持紧凑；两排之间稍微多一点透气 */
-    column-gap: 4px;
-    row-gap: 10px;
+    gap: 4px;
     margin-top: clamp(8px, 1.2vh, 14px);
   }
 
@@ -2554,8 +2532,7 @@ body.is-ready .input-card {
   }
 
   .stepper-row {
-    column-gap: 3px;
-    row-gap: 8px;
+    gap: 3px;
   }
 }
 
@@ -2635,11 +2612,10 @@ body.is-ready .input-card {
   border-top: 1px solid var(--c-divider);
 }
 
-/* footer 里的版本号，独立一行的胶囊 */
+/* footer 里的版本号，独立成一个小胶囊更醒目 */
 .settings-version {
-  display: block;
-  width: max-content;
-  margin: 12px auto 0;
+  display: inline-block;
+  margin-top: 12px;
   padding: 3px 12px;
   border-radius: 999px;
   background: var(--c-divider);
