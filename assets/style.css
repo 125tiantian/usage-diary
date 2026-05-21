@@ -2395,8 +2395,11 @@ body.is-ready .input-card {
   .status-card-meta {
     margin-top: clamp(7px, 1.2vh, 12px);
     font-size: clamp(10.5px, 1.3vh, 12px);
-    gap: 2px 6px;
-    flex-wrap: wrap;
+    /* 手机端把两条 meta 信息拆成两行，5h 和 Weekly 行为一致 */
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 3px;
   }
 
   /* —— 输入卡 —— */
@@ -2449,13 +2452,16 @@ body.is-ready .input-card {
      均分到"标题和数字之间"+"按钮和底部之间"两个气孔。子卡越高气孔越大、
      但由于上限 360 封死，气孔不会超过 ~75px，不会回到"细长鬼影"的状态。
      ↑XX 那个 marker label 仍然需要 bar-track 留一段 margin-bottom 给它。 */
+  /* 手机端把数字往上靠：去掉 big-number 上方的 auto 间距，
+     让 label → 数字 紧凑一些；剩余空间全部留给 stepper-row 下方，
+     让两排步进按钮整体向中间居中，下边气孔也更舒展。 */
   .input-sub > .big-number {
-    margin-top: auto;
+    margin-top: 4px;
     margin-bottom: 0;
   }
 
   .input-sub > .bar-track {
-    margin-top: 10px;
+    margin-top: 8px;
     margin-bottom: clamp(20px, 2.6vh, 26px);
   }
 
@@ -2484,7 +2490,9 @@ body.is-ready .input-card {
   }
 
   .stepper-row {
-    gap: 4px;
+    /* 横向按钮之间保持紧凑，纵向两排之间稍微拉开一点，看着更透气 */
+    column-gap: 4px;
+    row-gap: 10px;
     margin-top: clamp(8px, 1.2vh, 14px);
   }
 
@@ -2532,7 +2540,8 @@ body.is-ready .input-card {
   }
 
   .stepper-row {
-    gap: 3px;
+    column-gap: 3px;
+    row-gap: 9px;
   }
 }
 
