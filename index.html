@@ -219,14 +219,14 @@
 
         <div class="rate-stats">
           <div class="rate-stat">
-            <span class="rate-stat-label">📊 历史平均</span>
+            <span class="rate-stat-label">📊 本周平均</span>
             <span class="rate-stat-value" id="rate-overall">—</span>
           </div>
-          <div class="rate-stat">
+          <div class="rate-stat" hidden>
             <span class="rate-stat-label">🔥 高峰时段</span>
             <span class="rate-stat-value" id="rate-peak">—</span>
           </div>
-          <div class="rate-stat">
+          <div class="rate-stat" hidden>
             <span class="rate-stat-label">🌿 非高峰</span>
             <span class="rate-stat-value" id="rate-offpeak">—</span>
           </div>
@@ -421,8 +421,8 @@
           <div class="settings-hint-line">偶尔导一份到本地做个保险～云同步只是辅助</div>
         </div>
 
-        <!-- 4. 高峰时段（按官方内置 · DST 自动切） -->
-        <div class="settings-card peak-card">
+        <!-- 4. 高峰时段（按官方内置 · DST 自动切）— 暂停，Anthropic 不再区分高峰 -->
+        <div class="settings-card peak-card" hidden>
           <div class="settings-card-head">
             <span class="settings-card-icon">🌙</span>
             <span class="settings-card-title">高峰时段</span>

@@ -400,101 +400,94 @@ function getCurrentWindow(windows) {
 }
 
 /* =================================================
-   4. 兑换率计算
+   4. 汇率计算（以 weekly 跳格为锚点）
    ================================================= */
 
-// 给一组窗口算总的兑换率（weekly 增量 / 5h 增量）
-// 用"从第一个窗口的首条到最后一个窗口的末条"的整体增量来算，
-// 这样 weekly 的跨窗口延迟变化也能被正确计入。
-// filterFn 用来筛选要纳入计算的窗口（高峰/非高峰等）。
-function computeRateForWindows(windows, settings, filterFn = null) {
-  // 先筛出符合条件、且至少有记录的窗口
-  const filtered = windows.filter(w => {
-    if (w.records.length === 0) return false;
-    if (filterFn && !filterFn(w)) return false;
-    return true;
-  });
+// 算法详见 _scratch/rate-calc-logic.txt
 
-  if (filtered.length === 0) return null;
+function median(arr) {
+  if (arr.length === 0) return null;
+  const sorted = arr.slice().sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
 
-  // 收集所有参与窗口的记录，按时间排序
-  const allRecords = [];
-  for (const w of filtered) {
-    for (const r of w.records) {
-      allRecords.push(r);
-    }
-  }
-  allRecords.sort((a, b) => a.timestamp - b.timestamp);
+// 扫描所有记录，找出每次 weekly 跳格事件，算出每一格的 5h 成本
+function computeRateSamples(records) {
+  if (records.length < 2) return [];
 
-  if (allRecords.length < 2) return null;
+  const sorted = records.slice().sort((a, b) => a.timestamp - b.timestamp);
+  const samples = [];
 
-  const first = allRecords[0];
-  const last = allRecords[allRecords.length - 1];
-  const d5h = last.fiveH - first.fiveH + (filtered.length - 1) * 100;
-  // ↑ 5h 每个窗口从 0 重新开始，所以跨窗口时要把中间窗口烧完的量（近似 100）
-  //   也算上……不对，5h 不一定烧到 100。换个思路：逐窗口累加各自的 5h 增量。
+  // 上一次跳格的记录（格的起点）；初始为第一条记录
+  let segStart = sorted[0];
 
-  let total5h = 0;
-  let totalWeekly = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
 
-  // 思路：把连续的窗口串起来。每个窗口贡献自己内部的 5h 增量，
-  // 而 weekly 增量要算"从上一个窗口末尾到这个窗口末尾"的变化，
-  // 这样就能捕捉到跨窗口的 weekly 延迟。
-  let prevLastWeekly = null;
-
-  for (const w of filtered) {
-    if (w.records.length < 1) continue;
-    const wFirst = w.records[0];
-    const wLast = w.records[w.records.length - 1];
-    const d5hW = wLast.fiveH - wFirst.fiveH;
-
-    if (d5hW <= 0) {
-      // 这个窗口没有 5h 消耗，但记住它的 weekly 末值
-      prevLastWeekly = wLast.weekly;
+    // weekly 周重置（cur.weekly < prev.weekly）→ 重置起点，不产生样本
+    if (cur.weekly < prev.weekly) {
+      segStart = cur;
       continue;
     }
 
-    // weekly 增量：从上一个窗口末尾（或这个窗口的首条）到这个窗口末尾
-    const weeklyBase = prevLastWeekly != null ? prevLastWeekly : wFirst.weekly;
-    const dWeeklyW = wLast.weekly - weeklyBase;
+    const jump = cur.weekly - prev.weekly;
+    if (jump <= 0) continue; // 没跳格
 
-    // 跳过 weekly 跨重置导致的负值
-    if (dWeeklyW < 0) {
-      prevLastWeekly = wLast.weekly;
-      continue;
+    // 发生了跳格（可能跳 1 格或多格）
+    let cost;
+    if (cur.windowId === segStart.windowId) {
+      // 同一个 5h 窗口内，直接做差
+      cost = cur.fiveH - segStart.fiveH;
+    } else {
+      // 跨了桶刷新：(刷新前末条.5h - 起点.5h) + 终点.5h
+      // 找起点所在窗口内的最后一条记录
+      let beforeRefresh5h = segStart.fiveH;
+      for (let j = i - 1; j >= 0; j--) {
+        if (sorted[j].windowId === segStart.windowId) {
+          beforeRefresh5h = sorted[j].fiveH;
+          break;
+        }
+      }
+      cost = (beforeRefresh5h - segStart.fiveH) + cur.fiveH;
     }
 
-    total5h += d5hW;
-    totalWeekly += dWeeklyW;
-    prevLastWeekly = wLast.weekly;
+    // 跳了多格时均摊
+    if (jump > 1) cost = cost / jump;
+
+    if (cost > 0) {
+      samples.push({ cost, timestamp: cur.timestamp });
+    }
+
+    segStart = cur;
   }
 
-  if (total5h === 0) return null;
-  return totalWeekly / total5h;
+  return samples;
 }
 
-// 当前汇率（最近 6 小时窗口）
-function computeCurrentRate(windows, settings) {
-  const cutoff = Date.now() - 6 * 60 * 60 * 1000;
-  return computeRateForWindows(windows, settings,
-    (w) => w.endTime >= cutoff);
+// 当前汇率 = 最近 3 格的中位数
+function computeCurrentRate(samples) {
+  if (samples.length < 3) return null;
+  const recent = samples.slice(-3).map(s => s.cost);
+  return median(recent);
 }
 
-// 历史平均（全部窗口）
-function computeOverallRate(windows, settings) {
-  return computeRateForWindows(windows, settings);
+// 本周汇率 = 本周所有格的中位数
+function computeWeeklyRate(samples, settings) {
+  const weekStart = getWeekStart(Date.now(), settings);
+  const weekEnd = getWeekEnd(weekStart, settings);
+  const weekSamples = samples.filter(s => s.timestamp >= weekStart && s.timestamp < weekEnd);
+  if (weekSamples.length === 0) return null;
+  return median(weekSamples.map(s => s.cost));
 }
 
-// 高峰时段汇率
+// --- 以下高峰相关函数保留但不再被调用（高峰机制暂停）---
 function computePeakRate(windows, settings) {
-  return computeRateForWindows(windows, settings,
-    (w) => isPeakHour(w.startTime));
+  return null;
 }
-
-// 非高峰时段汇率
 function computeOffPeakRate(windows, settings) {
-  return computeRateForWindows(windows, settings,
-    (w) => !isPeakHour(w.startTime));
+  return null;
 }
 
 /* =================================================
@@ -962,41 +955,37 @@ async function handleSave() {
 let rateChart = null;
 
 function renderRateCard() {
-  const windows = computeWindows(state.records);
+  const samples = computeRateSamples(state.records);
+  const current = computeCurrentRate(samples);
+  const weekly = computeWeeklyRate(samples, state.settings);
 
-  const current = computeCurrentRate(windows, state.settings);
-  const overall = computeOverallRate(windows, state.settings);
-  const peak = computePeakRate(windows, state.settings);
-  const offpeak = computeOffPeakRate(windows, state.settings);
+  const fmt = (v) => v !== null ? v.toFixed(1) : '—';
 
-  // 显示时取倒数：从 "1% 5h ≈ 0.85% weekly" 反过来写成 "1.18% 5h = 1% weekly"
-  // 和日常汇率习惯一致（"6.5 人民币 = 1 美元"）
-  const rateDisplay = (v) => v !== null && v > 0 ? (1 / v).toFixed(2) : '—';
-
-  $('#rate-big').textContent = rateDisplay(current);
+  $('#rate-big').textContent = fmt(current);
   $('#rate-explain').textContent = current !== null
-    ? `${rateDisplay(current)}% 5h = 1% weekly`
-    : '等数据中…（最近 6 小时还没有可计算的窗口）';
+    ? `${fmt(current)}% 5h ≈ 1% weekly`
+    : samples.length > 0
+      ? `样本不足（${samples.length}/3）`
+      : '等数据中…';
 
-  $('#rate-overall').textContent = rateDisplay(overall);
-  $('#rate-peak').textContent = rateDisplay(peak);
-  $('#rate-offpeak').textContent = rateDisplay(offpeak);
+  $('#rate-overall').textContent = fmt(weekly);
+  // 高峰/非高峰已暂停，不写值
 
   const trendEl = $('#rate-trend');
-  if (current !== null && overall !== null) {
-    const diff = (current - overall) / overall;
-    if (diff > 0.15) {
-      trendEl.textContent = `🔥 比平时贵 ${Math.round(diff * 100)}%`;
+  if (current !== null && weekly !== null) {
+    const diff = current - weekly;
+    if (diff > weekly * 0.15) {
+      trendEl.textContent = `🔥 比本周均值高 ${Math.round((diff / weekly) * 100)}%`;
       trendEl.className = 'rate-trend is-up';
-    } else if (diff < -0.15) {
-      trendEl.textContent = `🌿 比平时省 ${Math.round(-diff * 100)}%`;
+    } else if (diff < -weekly * 0.15) {
+      trendEl.textContent = `🌿 比本周均值低 ${Math.round((-diff / weekly) * 100)}%`;
       trendEl.className = 'rate-trend is-down';
     } else {
-      trendEl.textContent = '☁️ 和平时差不多';
+      trendEl.textContent = '☁️ 和本周均值差不多';
       trendEl.className = 'rate-trend';
     }
   } else {
-    trendEl.textContent = '等数据中…';
+    trendEl.textContent = samples.length > 0 ? `样本不足（${samples.length}/3）` : '等数据中…';
     trendEl.className = 'rate-trend';
   }
 }
@@ -1005,22 +994,22 @@ function renderRateTrendChart() {
   const wrap = $('#rate-chart-wrap');
   if (wrap.hidden) return;
 
-  const windows = computeWindows(state.records);
+  const samples = computeRateSamples(state.records);
 
-  // 按"日"分组，每天算一个汇率
+  // 按天分组格成本样本，每天取中位数
   const byDay = new Map();
-  for (const w of windows) {
-    const d = new Date(w.startTime);
+  for (const s of samples) {
+    const d = new Date(s.timestamp);
     const dayKey = `${d.getMonth() + 1}/${d.getDate()}`;
     if (!byDay.has(dayKey)) byDay.set(dayKey, []);
-    byDay.get(dayKey).push(w);
+    byDay.get(dayKey).push(s.cost);
   }
 
   const allLabels = Array.from(byDay.keys());
   const labels = allLabels.slice(-4);
   const data = labels.map(k => {
-    const r = computeRateForWindows(byDay.get(k), state.settings);
-    return r !== null && r > 0 ? +(1 / r).toFixed(2) : null;
+    const m = median(byDay.get(k));
+    return m !== null ? +m.toFixed(1) : null;
   });
 
   const ctx = $('#rate-chart').getContext('2d');
@@ -1370,9 +1359,8 @@ function renderWindowDetail(windows) {
   const endD = new Date(w.endTime);
   const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
   const isActive = Date.now() < w.endTime;
-  const peakTag = isPeakHour(w.startTime) ? ' 🔥' : '';
   const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
-  $('#history-title').textContent = `${dateStr} ${pad(startD.getHours())}:00 - ${pad(endD.getHours())}:00${peakTag} ${isActive ? '· 进行中' : '· 已结束'}`;
+  $('#history-title').textContent = `${dateStr} ${pad(startD.getHours())}:00 - ${pad(endD.getHours())}:00 ${isActive ? '· 进行中' : '· 已结束'}`;
 
   // 总结
   const finalVal = w.lastValue;
@@ -1695,7 +1683,7 @@ function openSettings() {
   $('#setting-weekly-hour').value = state.settings.weeklyResetHour;
   fillSyncInputs();
   renderResetCard();
-  renderPeakCardDST();
+  // renderPeakCardDST(); — 高峰机制暂停
   renderConfigSummary();
   const mask = $('#settings-modal');
   mask.classList.remove('is-closing');
@@ -3176,9 +3164,8 @@ function buildWindowPickerItems() {
     const startD = new Date(w.startTime);
     const endD = new Date(w.endTime);
     const isActive = Date.now() < w.endTime;
-    const isPeak = isPeakHour(w.startTime);
     const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
-    const title = `${dateStr} ${pad(startD.getHours())}:00–${pad(endD.getHours())}:00${isPeak ? ' 🔥' : ''}`;
+    const title = `${dateStr} ${pad(startD.getHours())}:00–${pad(endD.getHours())}:00`;
     const tag = isActive ? '<span class="picker-tag picker-tag--live">进行中</span>' : '';
     const meta = `${w.lastValue}% · ${w.records.length} 条`;
     return {
