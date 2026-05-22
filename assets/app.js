@@ -3070,10 +3070,9 @@ function setupScrollReveal() {
       }
     });
   }, {
-    // 之前是 0.12 + rootMargin -40，等于"刚冒头就触发"，
-    // 结果用户还没真正看到图表，1.3 秒动画就已经偷偷播完了。
-    // 现在改成 0.35：图表区域露出 35% 才触发，动画播放和"看到"同步。
-    threshold: 0.35,
+    // 元素刚冒头就触发；曾经为别的问题拉到 0.35，确认无关后回滚
+    threshold: 0.12,
+    rootMargin: '-40px',
   });
   document.querySelectorAll('.scroll-reveal').forEach((el) => {
     observer.observe(el);

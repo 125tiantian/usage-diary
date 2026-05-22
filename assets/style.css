@@ -364,6 +364,45 @@ input, textarea, select {
   background: linear-gradient(135deg, var(--c-weekly-soft) 0%, var(--c-weekly-grad-end) 100%);
 }
 
+/* 状态卡同色系光晕装饰，两张卡用不同光斑布局避免看着像复制粘贴 */
+.status-card--5h::before,
+.status-card--weekly::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.status-card--5h::before {
+  background:
+    radial-gradient(ellipse 60% 45% at 80% 15%, rgba(244, 213, 141, 0.18), transparent 70%),
+    radial-gradient(ellipse 50% 50% at 20% 85%, rgba(232, 139, 90, 0.10), transparent 65%);
+}
+
+.status-card--weekly::before {
+  background:
+    radial-gradient(ellipse 75% 50% at 15% 50%, rgba(149, 201, 166, 0.18), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 90% 25%, rgba(111, 174, 131, 0.10), transparent 65%);
+}
+
+[data-theme="dark"] .status-card--5h::before {
+  background:
+    radial-gradient(ellipse 60% 45% at 80% 15%, rgba(244, 213, 141, 0.10), transparent 70%),
+    radial-gradient(ellipse 50% 50% at 20% 85%, rgba(232, 139, 90, 0.07), transparent 65%);
+}
+
+[data-theme="dark"] .status-card--weekly::before {
+  background:
+    radial-gradient(ellipse 75% 50% at 15% 50%, rgba(149, 201, 166, 0.10), transparent 70%),
+    radial-gradient(ellipse 45% 40% at 90% 25%, rgba(111, 174, 131, 0.07), transparent 65%);
+}
+
+/* 子元素拔到 ::before 之上，否则光晕会盖住 label / 数字 */
+.status-card > * {
+  position: relative;
+  z-index: 1;
+}
+
 .status-card-label {
   font-family: var(--font-display);
   font-size: 14px;
@@ -2392,11 +2431,13 @@ body.is-ready .input-card {
     margin-top: clamp(7px, 1.2vh, 12px);
   }
 
+  /* 锁死两行：原 flex-wrap 卡在临界宽度上，刷新会在一行/两行之间跳 */
   .status-card-meta {
     margin-top: clamp(7px, 1.2vh, 12px);
     font-size: clamp(10.5px, 1.3vh, 12px);
-    gap: 2px 6px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
   }
 
   /* —— 输入卡 —— */
@@ -2445,23 +2486,40 @@ body.is-ready .input-card {
     margin-top: auto;
   }
 
-  /* 子卡现在允许在 280~360 的范围内增长，内部用 margin: auto 把剩余空间
-     均分到"标题和数字之间"+"按钮和底部之间"两个气孔。子卡越高气孔越大、
-     但由于上限 360 封死，气孔不会超过 ~75px，不会回到"细长鬼影"的状态。
-     ↑XX 那个 marker label 仍然需要 bar-track 留一段 margin-bottom 给它。 */
+  /* 手机端「记一下」卡内部叠光晕，复刻 PC body 背景上看不到的那 3 个光斑 */
+  .input-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-card);
+    background:
+      radial-gradient(ellipse 65% 50% at 15% 18%, rgba(244, 213, 141, 0.32), transparent 70%),
+      radial-gradient(ellipse 55% 60% at 88% 82%, rgba(184, 164, 212, 0.24), transparent 65%),
+      radial-gradient(ellipse 45% 32% at 72% 10%, rgba(232, 156, 126, 0.18), transparent 60%);
+    pointer-events: none;
+  }
+
+  [data-theme="dark"] .input-card::before {
+    background:
+      radial-gradient(ellipse 65% 50% at 15% 18%, rgba(244, 213, 141, 0.14), transparent 70%),
+      radial-gradient(ellipse 55% 60% at 88% 82%, rgba(184, 164, 212, 0.16), transparent 65%),
+      radial-gradient(ellipse 45% 32% at 72% 10%, rgba(232, 156, 126, 0.10), transparent 60%);
+  }
+
+  /* auto margin 从上下挪到中段：X% 贴 label、按钮贴底，空白集中在 bar 和按钮之间 */
   .input-sub > .big-number {
-    margin-top: auto;
+    margin-top: clamp(10px, 1.8vh, 18px);
     margin-bottom: 0;
   }
 
   .input-sub > .bar-track {
-    margin-top: 10px;
+    margin-top: clamp(16px, 2.4vh, 22px);
     margin-bottom: clamp(20px, 2.6vh, 26px);
   }
 
   .input-sub > .stepper-row {
-    margin-top: 12px;
-    margin-bottom: auto;
+    margin-top: auto;
+    margin-bottom: clamp(10px, 1.8vh, 16px);
   }
 
   .input-sub-label {
@@ -2484,7 +2542,7 @@ body.is-ready .input-card {
   }
 
   .stepper-row {
-    gap: 4px;
+    gap: 4px 7px;
     margin-top: clamp(8px, 1.2vh, 14px);
   }
 
@@ -2503,7 +2561,7 @@ body.is-ready .input-card {
   .stepper-gap {
     flex-basis: 100%;
     width: 0;
-    height: 0;
+    height: 4px;
   }
 }
 
@@ -2612,10 +2670,11 @@ body.is-ready .input-card {
   border-top: 1px solid var(--c-divider);
 }
 
-/* footer 里的版本号，独立成一个小胶囊更醒目 */
+/* 独占一行居中的小胶囊 */
 .settings-version {
-  display: inline-block;
-  margin-top: 12px;
+  display: block;
+  width: max-content;
+  margin: 12px auto 0;
   padding: 3px 12px;
   border-radius: 999px;
   background: var(--c-divider);
