@@ -364,45 +364,6 @@ input, textarea, select {
   background: linear-gradient(135deg, var(--c-weekly-soft) 0%, var(--c-weekly-grad-end) 100%);
 }
 
-/* 状态卡同色系光晕装饰，两张卡用不同光斑布局避免看着像复制粘贴 */
-.status-card--5h::before,
-.status-card--weekly::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.status-card--5h::before {
-  background:
-    radial-gradient(ellipse 60% 45% at 80% 15%, rgba(244, 213, 141, 0.18), transparent 70%),
-    radial-gradient(ellipse 50% 50% at 20% 85%, rgba(232, 139, 90, 0.10), transparent 65%);
-}
-
-.status-card--weekly::before {
-  background:
-    radial-gradient(ellipse 75% 50% at 15% 50%, rgba(149, 201, 166, 0.18), transparent 70%),
-    radial-gradient(ellipse 45% 40% at 90% 25%, rgba(111, 174, 131, 0.10), transparent 65%);
-}
-
-[data-theme="dark"] .status-card--5h::before {
-  background:
-    radial-gradient(ellipse 60% 45% at 80% 15%, rgba(244, 213, 141, 0.10), transparent 70%),
-    radial-gradient(ellipse 50% 50% at 20% 85%, rgba(232, 139, 90, 0.07), transparent 65%);
-}
-
-[data-theme="dark"] .status-card--weekly::before {
-  background:
-    radial-gradient(ellipse 75% 50% at 15% 50%, rgba(149, 201, 166, 0.10), transparent 70%),
-    radial-gradient(ellipse 45% 40% at 90% 25%, rgba(111, 174, 131, 0.07), transparent 65%);
-}
-
-/* 子元素拔到 ::before 之上，否则光晕会盖住 label / 数字 */
-.status-card > * {
-  position: relative;
-  z-index: 1;
-}
-
 .status-card-label {
   font-family: var(--font-display);
   font-size: 14px;
@@ -2506,6 +2467,45 @@ body.is-ready .input-card {
       radial-gradient(ellipse 45% 32% at 72% 10%, rgba(232, 156, 126, 0.10), transparent 60%);
   }
 
+  /* 状态卡同色系光晕装饰，两张卡用不同光斑布局避免看着像复制粘贴 */
+  .status-card--5h::before,
+  .status-card--weekly::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .status-card--5h::before {
+    background:
+      radial-gradient(ellipse 60% 45% at 80% 15%, rgba(244, 213, 141, 0.18), transparent 70%),
+      radial-gradient(ellipse 50% 50% at 20% 85%, rgba(232, 139, 90, 0.10), transparent 65%);
+  }
+
+  .status-card--weekly::before {
+    background:
+      radial-gradient(ellipse 75% 50% at 15% 50%, rgba(149, 201, 166, 0.18), transparent 70%),
+      radial-gradient(ellipse 45% 40% at 90% 25%, rgba(111, 174, 131, 0.10), transparent 65%);
+  }
+
+  [data-theme="dark"] .status-card--5h::before {
+    background:
+      radial-gradient(ellipse 60% 45% at 80% 15%, rgba(244, 213, 141, 0.10), transparent 70%),
+      radial-gradient(ellipse 50% 50% at 20% 85%, rgba(232, 139, 90, 0.07), transparent 65%);
+  }
+
+  [data-theme="dark"] .status-card--weekly::before {
+    background:
+      radial-gradient(ellipse 75% 50% at 15% 50%, rgba(149, 201, 166, 0.10), transparent 70%),
+      radial-gradient(ellipse 45% 40% at 90% 25%, rgba(111, 174, 131, 0.07), transparent 65%);
+  }
+
+  /* 子元素拔到 ::before 之上，否则光晕会盖住 label / 数字 */
+  .status-card > * {
+    position: relative;
+    z-index: 1;
+  }
+
   /* auto margin 从上下挪到中段：X% 贴 label、按钮贴底，空白集中在 bar 和按钮之间 */
   .input-sub > .big-number {
     margin-top: clamp(10px, 1.8vh, 18px);
@@ -2513,7 +2513,7 @@ body.is-ready .input-card {
   }
 
   .input-sub > .bar-track {
-    margin-top: clamp(16px, 2.4vh, 22px);
+    margin-top: clamp(22px, 3.2vh, 30px);
     margin-bottom: clamp(20px, 2.6vh, 26px);
   }
 
