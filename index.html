@@ -31,7 +31,9 @@
     (function() {
       try {
         var saved = localStorage.getItem('limit-diary-theme');
-        var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        // saved 可能是 'dark' / 'light' / 'system'（跟随系统）/ null（老用户，默认也跟随系统）
+        var theme = (saved === 'dark' || saved === 'light') ? saved : (prefersDark ? 'dark' : 'light');
         document.documentElement.dataset.theme = theme;
       } catch (e) {}
     })();
@@ -347,6 +349,24 @@
           </div>
         </div>
 
+        <!-- 1.5 外观 -->
+        <div class="settings-card appearance-card">
+          <div class="settings-card-head">
+            <span class="settings-card-icon">🎨</span>
+            <span class="settings-card-title">外观</span>
+          </div>
+          <div class="more-item">
+            <div>
+              <div class="more-item-text">🖥️ 跟随系统深浅色</div>
+              <div class="more-item-sub">开启后自动跟随系统的深色 / 浅色设置；点右上角 🌙/☀️ 会切回手动</div>
+            </div>
+            <label class="settings-switch">
+              <input type="checkbox" id="theme-system-toggle">
+              <span class="settings-switch-track"></span>
+            </label>
+          </div>
+        </div>
+
         <!-- 2. 这周的起点 -->
         <div class="settings-card reset-card">
           <div class="settings-card-head">
@@ -526,7 +546,7 @@
         <div class="settings-footer">
           额度小日记 · 缓解 Claude 额度焦虑的小手账<br>
           数据存在你的浏览器本地，配了云同步会自动备份到 jsonbin.io
-          <div class="settings-version">v2.54</div>
+          <div class="settings-version">v2.55</div>
         </div>
 
       </div>

@@ -1697,6 +1697,9 @@ function openSettings() {
   renderResetCard();
   // renderPeakCardDST(); — 高峰机制暂停
   renderConfigSummary();
+  // 同步「跟随系统深浅色」开关状态
+  const themeSystemToggle = $('#theme-system-toggle');
+  if (themeSystemToggle) themeSystemToggle.checked = getThemeMode() === 'system';
   const mask = $('#settings-modal');
   mask.classList.remove('is-closing');
   mask.hidden = false;
@@ -2718,16 +2721,40 @@ function tooltipStyle(extra = {}) {
 /* —— 主题切换 —— */
 const THEME_KEY = 'limit-diary-theme';
 
-function loadTheme() {
+// 系统当前是否偏好深色
+function systemPrefersDark() {
+  return !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
+
+// 读取主题模式：'dark' / 'light' / 'system'（跟随系统）
+// 没存过、或存的是老的非法值，都按 'system'（跟随系统）处理 —— 老用户默认也跟随系统
+function getThemeMode() {
   try {
     const saved = localStorage.getItem(THEME_KEY);
-    if (saved === 'dark' || saved === 'light') return saved;
+    if (saved === 'dark' || saved === 'light' || saved === 'system') return saved;
   } catch (e) {}
-  // 跟随系统
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-    return 'dark';
-  }
-  return 'light';
+  return 'system';
+}
+
+function setThemeMode(mode) {
+  try {
+    localStorage.setItem(THEME_KEY, mode);
+  } catch (e) {}
+}
+
+// 把模式解析成实际生效的主题（'dark' / 'light'）
+function loadTheme() {
+  const mode = getThemeMode();
+  if (mode === 'dark' || mode === 'light') return mode;
+  return systemPrefersDark() ? 'dark' : 'light';
+}
+
+// 主题切换后，图表颜色跟着 CSS 变量走需要手动重建
+function repaintAfterThemeChange() {
+  renderRateCard();
+  renderRateTrendChart();
+  renderWeeklyChart('rebuild');
+  renderHistory();
 }
 
 function applyTheme(theme) {
@@ -2747,16 +2774,14 @@ function toggleTheme() {
   // 临时启用平滑过渡（只在切换瞬间，避免影响其他动画）
   document.documentElement.classList.add('theme-transitioning');
   applyTheme(next);
-  try {
-    localStorage.setItem(THEME_KEY, next);
-  } catch (e) {}
+  // 手动点按钮 = 切到手动模式，存固定值（不再跟随系统）
+  setThemeMode(next);
+  // 如果设置面板开着，把「跟随系统」开关同步关掉
+  const sysToggle = $('#theme-system-toggle');
+  if (sysToggle) sysToggle.checked = false;
 
-  // 重新渲染所有图表（Chart.js 不会自动跟着 CSS 变量走，必须手动刷新）
   // 主题切换时所有颜色都变了，必须强制重建图表（仅 update 不会更新颜色）
-  renderRateCard();
-  renderRateTrendChart();
-  renderWeeklyChart('rebuild');
-  renderHistory();
+  repaintAfterThemeChange();
 
   setTimeout(() => {
     document.documentElement.classList.remove('theme-transitioning');
@@ -2978,6 +3003,29 @@ function bindEvents() {
       setSyncPaused(e.target.checked);
       fillSyncInputs();
       showToast(e.target.checked ? '已暂停自动同步 ⏸' : '已恢复自动同步 ✨');
+    });
+  }
+
+  // 跟随系统深浅色开关
+  const themeSystemToggle = $('#theme-system-toggle');
+  if (themeSystemToggle) {
+    themeSystemToggle.addEventListener('change', (e) => {
+      document.documentElement.classList.add('theme-transitioning');
+      if (e.target.checked) {
+        // 切回跟随系统：存 'system'，按系统当前偏好生效
+        setThemeMode('system');
+        applyTheme(systemPrefersDark() ? 'dark' : 'light');
+      } else {
+        // 锁定当前正在显示的主题
+        const current = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+        setThemeMode(current);
+        applyTheme(current);
+      }
+      repaintAfterThemeChange();
+      setTimeout(() => {
+        document.documentElement.classList.remove('theme-transitioning');
+      }, 350);
+      showToast(e.target.checked ? '已跟随系统深浅色 🖥️' : '已锁定当前主题');
     });
   }
 
@@ -3382,18 +3430,14 @@ function init() {
     }
   });
 
-  // 监听系统主题变化（仅当用户没有手动设置过偏好时跟随）
+  // 监听系统主题变化（仅当处于「跟随系统」模式时才实时跟随）
   if (window.matchMedia) {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     mq.addEventListener && mq.addEventListener('change', (e) => {
       try {
-        // 只有用户没保存过偏好时才跟随系统
-        if (!localStorage.getItem(THEME_KEY)) {
+        if (getThemeMode() === 'system') {
           applyTheme(e.matches ? 'dark' : 'light');
-          renderRateCard();
-          renderRateTrendChart();
-          renderWeeklyChart();
-          renderHistory();
+          repaintAfterThemeChange();
         }
       } catch (err) {}
     });
