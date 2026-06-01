@@ -2898,9 +2898,9 @@ body.is-ready .input-card {
   margin-top: 8px;
 }
 
-/* 折叠区里的「保存」键：与表单留点间距，靠左摆 */
+/* 折叠区里的「保存」键：跟「点重置」同排，离它留一点点间距 */
 .fold-save-btn {
-  margin-top: 12px;
+  margin-left: 6px;
 }
 
 /* 表单（form-row 已存在；form-field 是新的） */
@@ -3012,6 +3012,12 @@ body.is-ready .input-card {
 
 .more-item:last-child {
   border-bottom: none;
+}
+
+/* 右侧按钮不被左边长说明挤压，文字也别竖排断行 */
+.more-item .text-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .more-item-text {
