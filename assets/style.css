@@ -3067,6 +3067,13 @@ body.is-ready .input-card {
   transform: translateX(16px);
 }
 
+/* 点右上角 🌙/☀️ 会顺手把开关关掉，此时 html 上挂着 .theme-transitioning，
+   它那条 !important 过渡只含颜色不含 transform，会盖掉滑块的滑动过渡让它瞬移。
+   这里专门把 transform 过渡补回来，让开关跟着一起滑、不再跳。 */
+.theme-transitioning .settings-switch-track::after {
+  transition: transform 0.25s var(--ease-bounce) !important;
+}
+
 /* ============ 14. 小时步进件（[−][12][+] 循环 0↔23） ============
    adjust 面板里"挪窗口起点"的小时、设置卡里"周重置"的小时都用它，
    手机上没原生 spinner 也能一点就调。 */
