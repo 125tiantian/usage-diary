@@ -1712,7 +1712,7 @@ function renderResetCard() {
   const hour = state.settings.weeklyResetHour;
   const dayEl = $('#reset-stat-day');
   const timeEl = $('#reset-stat-time');
-  if (dayEl) dayEl.textContent = `${dayNames[day]} · ${pad(hour)}:00`;
+  if (dayEl) dayEl.textContent = `周${dayNames[day]} · ${pad(hour)}:00`;
   if (timeEl) {
     const now = Date.now();
     const weekEnd = getWeekEnd(getWeekStart(now, state.settings), state.settings);
@@ -1836,7 +1836,9 @@ async function markWeeklyResetNow() {
   setTimeout(() => fireAnim(toast, 'is-showing', 1900), 450);
 }
 
-function closeSettings() {
+// 把面板里的「周重置时间」输入写回 state，返回是否真的改了。
+// 关面板和点保存键共用这段，逻辑只留一份。
+function applyWeeklySettings() {
   // 高峰相关字段不再读取——按官方公告内置、跟着 DST 自动算
   const oldDay = state.settings.weeklyResetDay;
   const oldHour = state.settings.weeklyResetHour;
@@ -1870,6 +1872,39 @@ function closeSettings() {
     // 不然保存完面板关闭后还会显示改设置前的"上次值"
     resetDraft();
   }
+  return weeklyChanged;
+}
+
+// 折叠区里点「保存」：写回设置 → 收起折叠 → 上方文字浮动刷新 + 气泡反馈
+function saveWeeklySettings() {
+  applyWeeklySettings();
+  saveData();
+
+  // 收起「改重置时间」折叠区
+  const btn = $('#weekly-save-btn');
+  const foldable = btn && btn.closest('.foldable');
+  if (foldable) foldable.classList.remove('is-open');
+
+  // 其它依赖周起点的卡也跟着新规则刷新
+  renderAll();
+
+  // 上方状态文字带"消解 → 浮入"动画刷新成新值
+  const dayEl = $('#reset-stat-day');
+  const timeEl = $('#reset-stat-time');
+  fireAnim(dayEl,  'is-dissolving', 0);
+  fireAnim(timeEl, 'is-dissolving', 0);
+  setTimeout(() => {
+    renderResetCard();
+    if (dayEl)  { dayEl.classList.remove('is-dissolving');  fireAnim(dayEl,  'is-sprouting', 500); }
+    if (timeEl) { timeEl.classList.remove('is-dissolving'); fireAnim(timeEl, 'is-sprouting', 500); }
+  }, 340);
+
+  // "已保存 ✓"小气泡
+  fireAnim($('#reset-save-toast'), 'is-showing', 1300);
+}
+
+function closeSettings() {
+  applyWeeklySettings();
   saveData();
 
   // 关闭动画：加 .is-closing 触发遮罩淡出 + 弹层下滑，
@@ -2963,6 +2998,9 @@ function bindEvents() {
 
   // Anthropic 临时重置 weekly
   $('#weekly-anchor-now-btn').addEventListener('click', markWeeklyResetNow);
+
+  // 折叠区里保存周重置时间
+  $('#weekly-save-btn').addEventListener('click', saveWeeklySettings);
 
   // 设置面板里所有折叠按钮：点了就切换父级 .is-open，CSS 里的 grid 过渡接管展开收起
   document.querySelectorAll('[data-fold]').forEach((btn) => {

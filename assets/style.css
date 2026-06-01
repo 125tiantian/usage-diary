@@ -2898,6 +2898,11 @@ body.is-ready .input-card {
   margin-top: 8px;
 }
 
+/* 折叠区里的「保存」键：与表单留点间距，靠左摆 */
+.fold-save-btn {
+  margin-top: 12px;
+}
+
 /* 表单（form-row 已存在；form-field 是新的） */
 .form-row {
   display: flex;
