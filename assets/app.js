@@ -1780,6 +1780,18 @@ async function markWeeklyResetNow() {
   const anchorTs = floorToHour(Date.now());
   const anchorD = new Date(anchorTs);
 
+  // 链尾可能挂着一条"还没生效"的未来规则——在设置里改过「周重置时间」会留下它
+  // （from = 下一个目标时刻，比"现在"晚）。这种情况下直接 appendWeeklyRule 会撞上
+  // 它的"防倒灌"闸（rule.from < last.from 就忽略），让这次重置被静默丢掉：动画照放、
+  // 底层却没动。「立即重置」的语义就是从现在起算，那些还没生效的未来安排理应作废，
+  // 先把链尾这类未来规则剥掉，剥完链尾必然 from <= anchorTs，append 就不会再被吞。
+  const rules = state.settings.weeklyRules;
+  if (Array.isArray(rules)) {
+    while (rules.length > 1 && rules[rules.length - 1].from > anchorTs) {
+      rules.pop();
+    }
+  }
+
   // 往规则链末尾追加一条新规则——之前那一段的 day/hour 自动留在 rules[len-2]，
   // 翻 ◀ 时上一段会按"重置前那一刻的真实规则"切，不会被锁死成史前期那条老规则。
   appendWeeklyRule(state.settings, {
