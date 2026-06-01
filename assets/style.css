@@ -351,9 +351,14 @@ input, textarea, select {
   transition: box-shadow 0.3s var(--ease-soft), transform 0.3s var(--ease-soft);
 }
 
-.status-card:hover {
-  box-shadow: var(--shadow-hover);
-  transform: translateY(-2px);
+/* 只在真有鼠标指针（PC）的设备上才上 hover 抬升效果。
+   手机触屏会把"点一下"也当作 hover 触发一帧，造成卡片"抽一下"的视觉抖动
+   （文字位置跟着 translateY 跳、box-shadow 粘住）。 */
+@media (hover: hover) and (pointer: fine) {
+  .status-card:hover {
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+  }
 }
 
 .status-card--5h {
@@ -448,8 +453,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   transition: box-shadow 0.3s var(--ease-soft);
 }
 
-.card:hover {
-  box-shadow: var(--shadow-hover);
+@media (hover: hover) and (pointer: fine) {
+  .card:hover {
+    box-shadow: var(--shadow-hover);
+  }
 }
 
 .card-title {
@@ -843,9 +850,11 @@ body:not(.is-bars-armed) .ring-bar-fill {
   letter-spacing: 1px;
 }
 
-.save-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(245, 166, 120, 0.45);
+@media (hover: hover) and (pointer: fine) {
+  .save-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(245, 166, 120, 0.45);
+  }
 }
 
 .save-btn:active {
