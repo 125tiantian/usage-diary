@@ -2898,6 +2898,11 @@ body.is-ready .input-card {
   margin-top: 8px;
 }
 
+/* 折叠区里的「保存」键：与表单留点间距，靠左摆 */
+.fold-save-btn {
+  margin-top: 12px;
+}
+
 /* 表单（form-row 已存在；form-field 是新的） */
 .form-row {
   display: flex;
@@ -3060,6 +3065,13 @@ body.is-ready .input-card {
 
 .settings-switch input:checked + .settings-switch-track::after {
   transform: translateX(16px);
+}
+
+/* 点右上角 🌙/☀️ 会顺手把开关关掉，此时 html 上挂着 .theme-transitioning，
+   它那条 !important 过渡只含颜色不含 transform，会盖掉滑块的滑动过渡让它瞬移。
+   这里专门把 transform 过渡补回来，让开关跟着一起滑、不再跳。 */
+.theme-transitioning .settings-switch-track::after {
+  transition: transform 0.25s var(--ease-bounce) !important;
 }
 
 /* ============ 14. 小时步进件（[−][12][+] 循环 0↔23） ============
