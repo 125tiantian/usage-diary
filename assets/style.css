@@ -3037,6 +3037,7 @@ body.is-ready .input-card {
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  cursor: pointer;
 }
 
 .settings-switch input {

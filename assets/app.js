@@ -23,6 +23,9 @@
 const STORAGE_KEY = 'limit-diary-v1';
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+// 5h 窗口起点取整粒度：十分钟。Claude 现在按"首次使用那一刻起算 5h"刷新，
+// 会落在非整点，抹到最近的十分钟既贴近真实又不让界面冒出零碎分钟。
+const WINDOW_STEP_MS = 10 * 60 * 1000;
 
 const DEFAULT_SETTINGS = {
   weeklyResetDay: 6,      // 0=日, 6=六；当前规则的"星期"，从 weeklyRules 末尾派生
@@ -170,28 +173,34 @@ function saveData() {
    3. 时间和窗口计算
    ================================================= */
 
-// 把时间戳向下取整到整点小时
+// 把时间戳向下取整到整点小时。仅用于 weekly 重置锚点——周重置是"周几+整点"规则，
+// 仍按整点对齐；5h 窗口才改用十分钟（floorToStep）。
 function floorToHour(ts) {
   const d = new Date(ts);
   d.setMinutes(0, 0, 0);
   return d.getTime();
 }
 
-// 已经在整点就不动，否则向上取到下一个整点
-function ceilToHour(ts) {
+// 把时间戳向下取整到最近的十分钟
+function floorToStep(ts) {
   const d = new Date(ts);
-  if (d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0) return ts;
-  d.setMinutes(0, 0, 0);
-  d.setHours(d.getHours() + 1);
+  d.setSeconds(0, 0);
+  d.setMinutes(Math.floor(d.getMinutes() / 10) * 10);
   return d.getTime();
+}
+
+// 已经落在十分钟刻度就不动，否则向上取到下一个十分钟刻度
+function ceilToStep(ts) {
+  const floored = floorToStep(ts);
+  return floored === ts ? ts : floored + WINDOW_STEP_MS;
 }
 
 // 给定一个时间戳和上一条记录，判断它属于哪个 5h 窗口
 function determineWindowId(ts, lastRecord) {
-  if (!lastRecord) return floorToHour(ts);
+  if (!lastRecord) return floorToStep(ts);
   const lastWindowEnd = lastRecord.windowId + FIVE_HOURS_MS;
   if (ts < lastWindowEnd) return lastRecord.windowId;
-  return floorToHour(ts);
+  return floorToStep(ts);
 }
 
 // 把"按星期几 + 整点"的规则算出 ts 所在那一周的起点。这是老逻辑，抽成独立函数
@@ -369,7 +378,7 @@ function computeWindows(records) {
   return Array.from(map.values()).sort((a, b) => a.startTime - b.startTime);
 }
 
-// 算某个窗口起点能挪到的合法范围 [minStart, maxStart]，整点对齐
+// 算某个窗口起点能挪到的合法范围 [minStart, maxStart]，十分钟对齐
 function getWindowAdjustRange(target, allWindows) {
   const idx = allWindows.findIndex((w) => w.id === target.id);
   const prevWin = idx > 0 ? allWindows[idx - 1] : null;
@@ -381,12 +390,12 @@ function getWindowAdjustRange(target, allWindows) {
   // 起点下界：自家最晚一笔记录留得住 + 不能侵前一个窗口的地盘
   let minStart = lastTs - FIVE_HOURS_MS + 1;
   if (prevWin) minStart = Math.max(minStart, prevWin.endTime);
-  minStart = ceilToHour(minStart);
+  minStart = ceilToStep(minStart);
 
   // 起点上界：自家最早一笔记录留得住 + 不能侵后一个窗口的地盘
   let maxStart = firstTs;
   if (nextWin) maxStart = Math.min(maxStart, nextWin.startTime - FIVE_HOURS_MS);
-  maxStart = floorToHour(maxStart);
+  maxStart = floorToStep(maxStart);
 
   return { minStart, maxStart };
 }
@@ -534,7 +543,7 @@ function resetDraft() {
     isNew = false;
   } else {
     // 需要开新 5h 窗口
-    windowId = floorToHour(now);
+    windowId = floorToStep(now);
     prev5h = 0;
     isNew = true;
   }
@@ -690,7 +699,7 @@ function renderStatusCards() {
 
     const startD = new Date(currentWindow.startTime);
     const endD = new Date(currentWindow.endTime);
-    $('#status-5h-range').textContent = `${pad(startD.getHours())}:00 - ${pad(endD.getHours())}:00`;
+    $('#status-5h-range').textContent = `${hm(startD)} - ${hm(endD)}`;
 
     const remainingMs = currentWindow.endTime - Date.now();
     const remainingMin = Math.max(0, Math.floor(remainingMs / 60000));
@@ -782,12 +791,12 @@ function renderInputCard() {
   if (state.isNewWindow) {
     const startD = new Date(state.draftWindowId);
     const endD = new Date(state.draftWindowId + FIVE_HOURS_MS);
-    tag.textContent = `🌱 新窗口 ${pad(startD.getHours())}:00 ~ ${pad(endD.getHours())}:00`;
+    tag.textContent = `🌱 新窗口 ${hm(startD)} ~ ${hm(endD)}`;
     tag.classList.add('is-new');
   } else {
     const startD = new Date(state.draftWindowId);
     const endD = new Date(state.draftWindowId + FIVE_HOURS_MS);
-    tag.textContent = `当前窗口 ${pad(startD.getHours())}:00 ~ ${pad(endD.getHours())}:00`;
+    tag.textContent = `当前窗口 ${hm(startD)} ~ ${hm(endD)}`;
     tag.classList.remove('is-new');
   }
 
@@ -1261,7 +1270,7 @@ function renderWeeklyChart(mode = 'update') {
               if (!items.length) return '';
               const d = new Date(items[0].parsed.x);
               const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
-              return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${pad(d.getHours())}:00`;
+              return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${hm(d)}`;
             },
             label: (item) => {
               if (item.dataset.label === '实际') {
@@ -1372,7 +1381,7 @@ function renderWindowDetail(windows) {
   const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
   const isActive = Date.now() < w.endTime;
   const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
-  $('#history-title').textContent = `${dateStr} ${pad(startD.getHours())}:00 - ${pad(endD.getHours())}:00 ${isActive ? '· 进行中' : '· 已结束'}`;
+  $('#history-title').textContent = `${dateStr} ${hm(startD)} - ${hm(endD)} ${isActive ? '· 进行中' : '· 已结束'}`;
 
   // 总结
   const finalVal = w.lastValue;
@@ -1460,7 +1469,7 @@ function renderWindowDetail(windows) {
             font: { family: "'Nunito', sans-serif", size: 11 },
             callback: function(value) {
               const d = new Date(value);
-              return `${pad(d.getHours())}:00`;
+              return hm(d);
             },
             stepSize: 60 * 60 * 1000,  // 1 hour
           },
@@ -1571,7 +1580,7 @@ function renderAdjustPanel(window, windows) {
     return;
   }
   toggleBtn.hidden = false;
-  toggleBtn.textContent = state.adjustOpen ? '✕ 收一下' : '✏️ 调起点';
+  toggleBtn.textContent = state.adjustOpen ? '✕ 收起' : '✏️ 调起点';
 
   if (!state.adjustOpen) {
     panel.classList.remove('is-open');
@@ -1610,7 +1619,7 @@ function formatYMD(d) {
 
 function formatHintTime(d) {
   const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
-  return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${pad(d.getHours())}:00`;
+  return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${hm(d)}`;
 }
 
 // 把窗口当前起点填进输入框作为初始默认值，只在"关→开"瞬间调用
@@ -1618,6 +1627,8 @@ function seedAdjustInputs(window) {
   const curD = new Date(window.startTime);
   $('#adjust-date').value = formatYMD(curD);
   $('#adjust-hour').value = curD.getHours();
+  // 分钟抹到十分钟刻度，和窗口起点的取整粒度一致
+  $('#adjust-min').value = Math.floor(curD.getMinutes() / 10) * 10;
 }
 
 function toggleAdjustPanel() {
@@ -1643,12 +1654,14 @@ function confirmAdjustWindow() {
 
   const dateStr = $('#adjust-date').value;
   const hour = parseInt($('#adjust-hour').value, 10);
+  const minute = parseInt($('#adjust-min').value, 10);
   const parts = dateStr ? dateStr.split('-').map((s) => parseInt(s, 10)) : [];
-  if (parts.length !== 3 || parts.some(isNaN) || isNaN(hour) || hour < 0 || hour > 23) {
-    showToast('日期或小时不太对～');
+  if (parts.length !== 3 || parts.some(isNaN) || isNaN(hour) || hour < 0 || hour > 23
+      || isNaN(minute) || minute < 0 || minute > 59) {
+    showToast('日期或时间不太对～');
     return;
   }
-  const newD = new Date(parts[0], parts[1] - 1, parts[2], hour, 0, 0, 0);
+  const newD = new Date(parts[0], parts[1] - 1, parts[2], hour, minute, 0, 0);
   const newId = newD.getTime();
   const oldId = w.id;
   if (newId === oldId) {
@@ -2516,6 +2529,11 @@ function pad(n) {
   return String(n).padStart(2, '0');
 }
 
+// 把一个 Date 格式化成 HH:MM（窗口起止现在精确到十分钟）
+function hm(d) {
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function clamp(val, min, max) {
   return Math.max(min, Math.min(max, val));
 }
@@ -3182,10 +3200,11 @@ function setupScrollReveal() {
    ================================================= */
 
 // 把 0–23 的小时数循环增减：23→0、0→23，符合用户对"小时是个圆环"的直觉
-function stepHourValue(input, delta) {
+// 步进一个数字输入并在 [0, wrap) 内循环。时用 wrap=24，分用 wrap=60（步长 10）
+function stepNumberInput(input, delta, wrap) {
   let v = parseInt(input.value, 10);
   if (isNaN(v)) v = 0;
-  v = ((v + delta) % 24 + 24) % 24;
+  v = ((v + delta) % wrap + wrap) % wrap;
   input.value = v;
   // 触发 input/change 事件，让任何监听者（含未来加的）能感知到值变了
   input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -3194,13 +3213,22 @@ function stepHourValue(input, delta) {
 
 function bindHourSteppers() {
   document.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-hour-step]');
-    if (!btn) return;
-    const wrap = btn.closest('[data-hour-stepper]');
-    const input = wrap && wrap.querySelector('input[type="number"]');
-    if (!input) return;
-    const step = parseInt(btn.dataset.hourStep, 10) || 0;
-    stepHourValue(input, step);
+    // 时步进（±1，循环 0~23）
+    const hourBtn = e.target.closest('[data-hour-step]');
+    if (hourBtn) {
+      const wrap = hourBtn.closest('[data-hour-stepper]');
+      const input = wrap && wrap.querySelector('input[type="number"]');
+      if (input) stepNumberInput(input, parseInt(hourBtn.dataset.hourStep, 10) || 0, 24);
+      return;
+    }
+    // 分步进（±10，循环 0~50）
+    const minBtn = e.target.closest('[data-min-step]');
+    if (minBtn) {
+      const wrap = minBtn.closest('[data-min-stepper]');
+      const input = wrap && wrap.querySelector('input[type="number"]');
+      if (input) stepNumberInput(input, parseInt(minBtn.dataset.minStep, 10) || 0, 60);
+      return;
+    }
     // 给按钮一个轻反馈（复用现有 stepTap 风格的 :active 缩放就够，无需额外 class）
   });
 }
@@ -3274,7 +3302,7 @@ function buildWindowPickerItems() {
     const endD = new Date(w.endTime);
     const isActive = Date.now() < w.endTime;
     const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
-    const title = `${dateStr} ${pad(startD.getHours())}:00–${pad(endD.getHours())}:00`;
+    const title = `${dateStr} ${hm(startD)}–${hm(endD)}`;
     const tag = isActive ? '<span class="picker-tag picker-tag--live">进行中</span>' : '';
     const meta = `${w.lastValue}% · ${w.records.length} 条`;
     return {
