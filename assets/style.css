@@ -2572,6 +2572,19 @@ body.is-ready .input-card {
     width: 0;
     height: 4px;
   }
+
+  /* 手机端步进按钮重排：加号一行在上、减号一行在下，
+     每行内部统一为 1 → 5 → 10（左到右）。
+     桌面端不设 order，保持 HTML 源顺序的单行 −10 −5 −1 | +1 +5 +10。
+     order 仅在 flex 容器内生效，按 data-step 精确指定每个按钮的位置；
+     中间的 stepper-gap（flex-basis:100%）作为强制换行点，把两行隔开。 */
+  .step-btn[data-step="1"]   { order: 1; }
+  .step-btn[data-step="5"]   { order: 2; }
+  .step-btn[data-step="10"]  { order: 3; }
+  .stepper-gap               { order: 4; }
+  .step-btn[data-step="-1"]  { order: 5; }
+  .step-btn[data-step="-5"]  { order: 6; }
+  .step-btn[data-step="-10"] { order: 7; }
 }
 
 /* 超窄屏（<=380px，比如 iPhone SE）再紧一档 */
@@ -2710,6 +2723,12 @@ body.is-ready .input-card {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 状态条下方那颗主操作按钮：拉满整行，点一下就拉取最新（等同打开应用的自动同步） */
+.sync-now-btn {
+  flex: 1;
+  text-align: center;
 }
 
 /* reset-card */
