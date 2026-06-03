@@ -1675,8 +1675,15 @@ function confirmAdjustWindow() {
     return;
   }
 
+  // 标记这次编辑的时刻：调起点只改 windowId、不动 timestamp（timestamp 是读数的逻辑
+  // 时刻，分周和画图都靠它，不能乱动）。所以单独写 updatedAt，让云同步能认出这次修改，
+  // 否则另一台拉取时会因为 timestamp 没变而误判"本地更新"，把这次调整丢掉。
+  const editedAt = Date.now();
   for (const r of state.records) {
-    if (r.windowId === oldId) r.windowId = newId;
+    if (r.windowId === oldId) {
+      r.windowId = newId;
+      r.updatedAt = editedAt;
+    }
   }
   if (state.selectedHistoryWindowId === oldId) {
     state.selectedHistoryWindowId = newId;
@@ -2197,8 +2204,19 @@ function fillSyncInputs() {
   refreshSyncPauseIndicator();
 }
 
+// 一条记录"最后被改动"的时刻，用来在合并时判断同一条记录哪一份更新。
+// 取 timestamp（创建/修正时刻）和 updatedAt（编辑时刻）里更大的那个：
+//   - 普通记录没有 updatedAt → 回退到 timestamp，和旧行为完全一致；
+//   - 「调起点」这类只改归属、不改数值的编辑会写 updatedAt（见 confirmAdjustWindow），
+//     这样另一台设备拉取时能正确认出"对面改过了"，不再因 timestamp 相同而误判本地更新。
+// timestamp 仍保留它原本"读数的逻辑时刻"语义（用于分周、画图），这里不改动它。
+function recordModTime(r) {
+  if (!r) return 0;
+  return Math.max(r.timestamp || 0, r.updatedAt || 0);
+}
+
 // —— 合并策略 ——
-// records: 按 id 去重，同 id 冲突时保留 timestamp 较大的那个
+// records: 按 id 去重，同 id 冲突时保留"最后被改动"较晚的那一份（见 recordModTime）
 // notes: 对象合并，本地覆盖远程（本地是用户最近操作的）
 // settings: 按 syncMeta.lastModified 较新的那一份
 function mergeSyncData(remote, local) {
@@ -2214,7 +2232,7 @@ function mergeSyncData(remote, local) {
     const existing = recordMap.get(rec.id);
     if (!existing) {
       recordMap.set(rec.id, rec);
-    } else if ((rec.timestamp || 0) >= (existing.timestamp || 0)) {
+    } else if (recordModTime(rec) >= recordModTime(existing)) {
       recordMap.set(rec.id, rec);
     }
   }
