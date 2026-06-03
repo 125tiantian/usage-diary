@@ -1675,8 +1675,15 @@ function confirmAdjustWindow() {
     return;
   }
 
+  // 标记这次编辑的时刻：调起点只改 windowId、不动 timestamp（timestamp 是读数的逻辑
+  // 时刻，分周和画图都靠它，不能乱动）。所以单独写 updatedAt，让云同步能认出这次修改，
+  // 否则另一台拉取时会因为 timestamp 没变而误判"本地更新"，把这次调整丢掉。
+  const editedAt = Date.now();
   for (const r of state.records) {
-    if (r.windowId === oldId) r.windowId = newId;
+    if (r.windowId === oldId) {
+      r.windowId = newId;
+      r.updatedAt = editedAt;
+    }
   }
   if (state.selectedHistoryWindowId === oldId) {
     state.selectedHistoryWindowId = newId;
@@ -2023,6 +2030,11 @@ async function clearAllData() {
 const SYNC_CONFIG_KEY = 'limit-diary-sync';
 const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
 
+// 本地节流：打开应用时，如果距上次成功同步还不到这个时长，就跳过自动拉取，
+// 直接用本地缓存。默认开启，避免短时间内反复打开都打远端、也省额度。
+// 手动点「同步」按钮（handleSyncNow）和设置里的「立即拉取/推送」不受这个限制。
+const SYNC_THROTTLE_MS = 20 * 60 * 1000; // 20 分钟
+
 const syncState = {
   config: null,      // { masterKey, binId, lastSyncedAt }
   inFlight: false,   // 当前有没有请求在进行中
@@ -2067,6 +2079,14 @@ function setSyncPaused(paused) {
   const c = syncState.config;
   if (!c) return;
   saveSyncConfig({ ...c, paused: !!paused });
+}
+
+// 本地节流是否生效：距上次成功同步还不到 SYNC_THROTTLE_MS。
+// 只用来挡"打开应用时的自动拉取"，手动同步永远绕过它。
+function isSyncThrottled() {
+  const c = syncState.config;
+  const last = (c && c.lastSyncedAt) || 0;
+  return last > 0 && (Date.now() - last) < SYNC_THROTTLE_MS;
 }
 
 function syncHeaders(key) {
@@ -2155,12 +2175,13 @@ function refreshSyncPauseIndicator() {
 function fillSyncInputs() {
   const keyEl = $('#sync-master-key');
   const idEl = $('#sync-bin-id');
-  const pauseEl = $('#sync-pause-toggle');
+  const autoEl = $('#sync-auto-toggle');
   if (!keyEl || !idEl) return;
   const c = syncState.config;
   keyEl.value = (c && c.masterKey) || '';
   idEl.value = (c && c.binId) || '';
-  if (pauseEl) pauseEl.checked = isSyncPaused();
+  // 正向开关：开 = 自动同步、关 = 不自动同步。底层仍存 paused，这里取反。
+  if (autoEl) autoEl.checked = !isSyncPaused();
 
   // 状态条也刷新一下
   if (isSyncConfigured()) {
@@ -2170,7 +2191,7 @@ function fillSyncInputs() {
         ? `上次同步：${last.getMonth() + 1}/${last.getDate()} ${pad(last.getHours())}:${pad(last.getMinutes())}`
         : '已配置，尚未同步';
       if (isSyncPaused()) {
-        setSyncStatus('ok', `⏸ 自动同步已暂停 · ${when}`);
+        setSyncStatus('ok', `⏸ 自动同步已关闭 · ${when}`);
       } else {
         setSyncStatus('ok', when);
       }
@@ -2183,8 +2204,19 @@ function fillSyncInputs() {
   refreshSyncPauseIndicator();
 }
 
+// 一条记录"最后被改动"的时刻，用来在合并时判断同一条记录哪一份更新。
+// 取 timestamp（创建/修正时刻）和 updatedAt（编辑时刻）里更大的那个：
+//   - 普通记录没有 updatedAt → 回退到 timestamp，和旧行为完全一致；
+//   - 「调起点」这类只改归属、不改数值的编辑会写 updatedAt（见 confirmAdjustWindow），
+//     这样另一台设备拉取时能正确认出"对面改过了"，不再因 timestamp 相同而误判本地更新。
+// timestamp 仍保留它原本"读数的逻辑时刻"语义（用于分周、画图），这里不改动它。
+function recordModTime(r) {
+  if (!r) return 0;
+  return Math.max(r.timestamp || 0, r.updatedAt || 0);
+}
+
 // —— 合并策略 ——
-// records: 按 id 去重，同 id 冲突时保留 timestamp 较大的那个
+// records: 按 id 去重，同 id 冲突时保留"最后被改动"较晚的那一份（见 recordModTime）
 // notes: 对象合并，本地覆盖远程（本地是用户最近操作的）
 // settings: 按 syncMeta.lastModified 较新的那一份
 function mergeSyncData(remote, local) {
@@ -2200,7 +2232,7 @@ function mergeSyncData(remote, local) {
     const existing = recordMap.get(rec.id);
     if (!existing) {
       recordMap.set(rec.id, rec);
-    } else if ((rec.timestamp || 0) >= (existing.timestamp || 0)) {
+    } else if (recordModTime(rec) >= recordModTime(existing)) {
       recordMap.set(rec.id, rec);
     }
   }
@@ -2419,6 +2451,22 @@ async function handleSyncInit() {
     showToast('初始化成功 ✨');
   } catch (e) {
     // 错误已在 syncInit 里通过 setSyncStatus 显示
+  }
+}
+
+// 设置页顶部的「同步」按钮：等同于打开应用时的自动同步——拉取最新数据并合并。
+// 手动触发，绕过本地节流。
+async function handleSyncNow() {
+  if (!isSyncConfigured()) {
+    showToast('先配置云同步哦');
+    return;
+  }
+  try {
+    await syncPull(false);
+    renderAll();
+    showToast('已同步 ✨');
+  } catch (e) {
+    // 错误状态已在 syncPull 里通过 setSyncStatus 显示
   }
 }
 
@@ -3048,6 +3096,8 @@ function bindEvents() {
       }, 100);
     });
   }
+  const syncNowBtn = $('#sync-now-btn');
+  if (syncNowBtn) syncNowBtn.addEventListener('click', handleSyncNow);
   const syncInitBtn = $('#sync-init-btn');
   if (syncInitBtn) syncInitBtn.addEventListener('click', handleSyncInit);
   const syncPullBtn = $('#sync-pull-btn');
@@ -3060,17 +3110,18 @@ function bindEvents() {
   if (syncImportBtn) syncImportBtn.addEventListener('click', handleSyncImportString);
   const syncClearBtn = $('#sync-clear-btn');
   if (syncClearBtn) syncClearBtn.addEventListener('click', handleSyncClear);
-  const syncPauseToggle = $('#sync-pause-toggle');
-  if (syncPauseToggle) {
-    syncPauseToggle.addEventListener('change', (e) => {
+  const syncAutoToggle = $('#sync-auto-toggle');
+  if (syncAutoToggle) {
+    syncAutoToggle.addEventListener('change', (e) => {
       if (!isSyncConfigured()) {
-        e.target.checked = false;
-        showToast('先配置云同步再用暂停哦');
+        e.target.checked = true;
+        showToast('先配置云同步再用哦');
         return;
       }
-      setSyncPaused(e.target.checked);
+      // 正向开关：开 = 自动同步（paused=false）、关 = 不自动同步（paused=true）
+      setSyncPaused(!e.target.checked);
       fillSyncInputs();
-      showToast(e.target.checked ? '已暂停自动同步 ⏸' : '已恢复自动同步 ✨');
+      showToast(e.target.checked ? '已开启自动同步 ✨' : '已关闭自动同步 ⏸');
     });
   }
 
@@ -3473,7 +3524,9 @@ function init() {
 
   // 云同步：如果已配置且未被暂停，在页面渲染完后台静默拉取一次，
   // 有新数据就合并并重绘。失败不阻塞本地使用。
-  if (isSyncConfigured() && !isSyncPaused()) {
+  // 本地节流：距上次同步不到 SYNC_THROTTLE_MS 就跳过这次自动拉取，直接用本地缓存。
+  // 想强制拉最新可以点顶栏的☁️或设置里的「同步」按钮（不走节流）。
+  if (isSyncConfigured() && !isSyncPaused() && !isSyncThrottled()) {
     setTimeout(() => {
       syncPull(true)
         .then(() => {

@@ -57,7 +57,7 @@
   <!-- Chart.js (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <link rel="stylesheet" href="assets/style.css?v=2.59">
+  <link rel="stylesheet" href="assets/style.css?v=2.60">
 </head>
 <body>
 
@@ -205,10 +205,12 @@
     </div><!-- /.hero 第一屏结束 -->
 
     <!-- ========== 4. 汇率卡 + 周曲线 ========== -->
-    <section class="middle-row scroll-reveal">
+    <!-- scroll-reveal 放在每张卡上而不是整行：PC 端两卡同行、同时入场；
+         移动端两卡各自独立成行，各自滚到视窗里时才触发入场 + 图表生长动画。 -->
+    <section class="middle-row">
 
       <!-- 汇率卡 -->
-      <div class="card rate-card" id="rate-card">
+      <div class="card rate-card scroll-reveal" id="rate-card">
         <div class="card-title">
           <span class="card-title-icon">💱</span>
           <span>当前汇率</span>
@@ -242,7 +244,7 @@
       </div>
 
       <!-- 周曲线卡 -->
-      <div class="card weekly-card">
+      <div class="card weekly-card scroll-reveal">
         <div class="card-title">
           <span class="card-title-icon">📈</span>
           <span>Weekly 节奏</span>
@@ -351,9 +353,7 @@
             <span class="sync-status-text" id="sync-status-text">未配置</span>
           </div>
           <div class="sync-actions">
-            <button class="text-btn text-btn--primary" id="sync-pull-btn">⬇️ 立即拉取</button>
-            <button class="text-btn text-btn--primary" id="sync-push-btn">⬆️ 立即推送</button>
-            <button class="text-btn text-btn--ghost" id="sync-export-btn">📋 复制配置</button>
+            <button class="text-btn text-btn--primary sync-now-btn" id="sync-now-btn">🔄 同步</button>
           </div>
         </div>
 
@@ -506,6 +506,14 @@
                 <div class="settings-hint-line" style="margin-top:14px;">
                   第一次用：去 <a href="https://jsonbin.io" target="_blank" rel="noopener">jsonbin.io</a> 注册账号、复制 Master Key 粘上面、点初始化即可
                 </div>
+
+                <hr class="settings-divider">
+
+                <div class="settings-btn-row">
+                  <button class="text-btn text-btn--primary" id="sync-pull-btn">⬇️ 立即拉取</button>
+                  <button class="text-btn text-btn--primary" id="sync-push-btn">⬆️ 立即推送</button>
+                  <button class="text-btn text-btn--ghost" id="sync-export-btn">📋 复制配置</button>
+                </div>
               </div>
             </div>
           </div>
@@ -522,11 +530,10 @@
                 <div class="more-list">
                   <div class="more-item">
                     <div>
-                      <div class="more-item-text">⏸ 暂停自动同步</div>
-                      <div class="more-item-sub">开启后不会在刷新和保存时自动同步</div>
+                      <div class="more-item-text">自动同步</div>
                     </div>
                     <label class="settings-switch">
-                      <input type="checkbox" id="sync-pause-toggle">
+                      <input type="checkbox" id="sync-auto-toggle">
                       <span class="settings-switch-track"></span>
                     </label>
                   </div>
@@ -556,7 +563,7 @@
         <div class="settings-footer">
           额度小日记 · 缓解 Claude 额度焦虑的小手账<br>
           数据存在你的浏览器本地，配了云同步会自动备份到 jsonbin.io
-          <div class="settings-version">v2.59</div>
+          <div class="settings-version">v2.60</div>
         </div>
 
       </div>
@@ -578,6 +585,6 @@
     </div>
   </div>
 
-  <script src="assets/app.js?v=2.59"></script>
+  <script src="assets/app.js?v=2.60"></script>
 </body>
 </html>
