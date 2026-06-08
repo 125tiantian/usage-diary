@@ -3270,6 +3270,11 @@ body.is-ready .input-card {
   border-color: var(--c-5h-deep);
 }
 
+/* 周标题字号偏小、行盒更矮，chevron 视觉重心要再往上提一点才居中 */
+.weekly-nav-title.picker-trigger::after {
+  margin-top: -5px;
+}
+
 .weekly-nav-title.picker-trigger:hover::after,
 .weekly-nav-title.picker-trigger:focus-visible::after {
   border-color: var(--c-weekly-deep);
@@ -3365,9 +3370,10 @@ body.is-ready .input-card {
   backdrop-filter: blur(2px);
 }
 
-/* 第一组紧贴列表顶，后面的组之间留出呼吸空隙，分隔感更自然 */
+/* 第一组紧贴列表顶；后面的组之间用一行虚线分隔，空隙更克制 */
 .picker-item + .picker-day {
-  margin-top: 8px;
+  margin-top: 3px;
+  border-top: 1px dashed var(--c-divider);
 }
 
 .picker-day-date {
@@ -3400,8 +3406,8 @@ body.is-ready .input-card {
   align-items: center;
   font-size: 11px;
   font-weight: 600;
-  line-height: 1;
-  padding: 3px 8px;
+  line-height: 1.25;
+  padding: 5px 10px;
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
 }
