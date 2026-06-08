@@ -1381,7 +1381,11 @@ function renderWindowDetail(windows) {
   const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
   const isActive = Date.now() < w.endTime;
   const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
-  $('#history-title').textContent = `${dateStr} ${hm(startD)} - ${hm(endD)} ${isActive ? '· 进行中' : '· 已结束'}`;
+  // 拆成"范围"和"状态"两段，各自 nowrap：手机上换行时整块下移，不会把"进行中"拆字
+  $('#history-title').innerHTML =
+    `<span class="history-title-range">${dateStr} ${hm(startD)} - ${hm(endD)}</span>` +
+    `<i class="history-title-break" aria-hidden="true"></i>` +
+    `<span class="history-title-status${isActive ? ' is-live' : ''}">${isActive ? '进行中' : '已结束'}</span>`;
 
   // 总结
   const finalVal = w.lastValue;
@@ -3305,6 +3309,17 @@ function openPicker(kind) {
     list.innerHTML = `<div class="picker-empty">还没有可挑的～</div>`;
   } else {
     list.innerHTML = items.map((it) => {
+      // 日期分隔头：标出这一天的 5h 总用量 + weekly 末值，自然地把每天的窗口分开
+      if (it.type === 'header') {
+        const wk = it.weekly == null ? '—' : `${it.weekly}%`;
+        return `<div class="picker-day">
+          <span class="picker-day-date">${it.dateLabel}<em>${it.dayLabel}</em></span>
+          <span class="picker-day-stats">
+            <span class="picker-day-stat picker-day-stat--5h">5h ${it.total5h}%</span>
+            <span class="picker-day-stat picker-day-stat--week">周 ${wk}</span>
+          </span>
+        </div>`;
+      }
       const cls = 'picker-item picker-item--' + kind + (it.isSelected ? ' is-selected' : '') + (it.isCurrent ? ' is-current' : '');
       return `<button type="button" class="${cls}" data-pick="${it.value}">
         <span class="picker-item-main">
@@ -3348,23 +3363,58 @@ function buildWindowPickerItems() {
   const windows = computeWindows(state.records);
   const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
   // 倒序：最近的窗口排最上面
-  return windows.slice().reverse().map((w) => {
-    const startD = new Date(w.startTime);
-    const endD = new Date(w.endTime);
-    const isActive = Date.now() < w.endTime;
-    const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
-    const title = `${dateStr} ${hm(startD)}–${hm(endD)}`;
-    const tag = isActive ? '<span class="picker-tag picker-tag--live">进行中</span>' : '';
-    const meta = `${w.lastValue}% · ${w.records.length} 条`;
-    return {
-      value: String(w.id),
-      title,
-      tag,
-      meta,
-      isSelected: w.id === state.selectedHistoryWindowId,
-      isCurrent: isActive,
-    };
-  });
+  const reversed = windows.slice().reverse();
+
+  // 按"起点日期"把窗口分组，组与组之间插一条日期分隔头
+  const groups = [];
+  let cur = null;
+  for (const w of reversed) {
+    const d = new Date(w.startTime);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (!cur || cur.key !== key) {
+      cur = { key, dateD: d, windows: [] };
+      groups.push(cur);
+    }
+    cur.windows.push(w);
+  }
+
+  const items = [];
+  for (const g of groups) {
+    const d = g.dateD;
+    // 这一天的 5h 总用量：各窗口末值之和
+    const total5h = g.windows.reduce((s, w) => s + w.lastValue, 0);
+    // 这一天的 weekly 末值：当天最后一条记录的 weekly
+    let lastWeekly = null;
+    let lastTs = -1;
+    for (const w of g.windows) {
+      const r = w.records[w.records.length - 1];
+      if (r && r.timestamp > lastTs) { lastTs = r.timestamp; lastWeekly = r.weekly; }
+    }
+    items.push({
+      type: 'header',
+      dateLabel: `${d.getMonth() + 1}/${d.getDate()}`,
+      dayLabel: `周${dayNames[d.getDay()]}`,
+      total5h,
+      weekly: lastWeekly,
+    });
+    for (const w of g.windows) {
+      const startD = new Date(w.startTime);
+      const endD = new Date(w.endTime);
+      const isActive = Date.now() < w.endTime;
+      const tag = isActive ? '<span class="picker-tag picker-tag--live">进行中</span>' : '';
+      const meta = `${w.lastValue}% · ${w.records.length} 条`;
+      items.push({
+        type: 'item',
+        value: String(w.id),
+        title: `${hm(startD)}–${hm(endD)}`,
+        tag,
+        meta,
+        isSelected: w.id === state.selectedHistoryWindowId,
+        isCurrent: isActive,
+      });
+    }
+  }
+  return items;
 }
 
 function buildWeekPickerItems() {
