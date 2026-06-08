@@ -1196,9 +1196,18 @@ body:not(.is-bars-armed) .ring-bar-fill {
 }
 
 .weekly-nav .nav-btn {
-  width: 28px;
-  height: 28px;
-  font-size: 11px;
+  width: 30px;
+  height: 30px;
+}
+
+.weekly-nav .nav-btn::before {
+  width: 7px;
+  height: 7px;
+}
+
+.weekly-nav .nav-btn:hover {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
 }
 
 .weekly-nav-title {
@@ -1264,18 +1273,44 @@ body:not(.is-bars-armed) .ring-bar-fill {
 }
 
 .nav-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: var(--bg-soft);
-  font-size: 12px;
   color: var(--text-secondary);
-  transition: all 0.2s var(--ease-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0; /* 吃掉任何残留字形，纯用 ::before 画箭头 */
+  transition: background 0.2s var(--ease-soft), color 0.2s var(--ease-soft), transform 0.12s var(--ease-soft);
+}
+
+/* 用描边画的 chevron，居中对齐，告别歪掉的字形三角 */
+.nav-btn::before {
+  content: '';
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 0 0 2px 0;
+}
+
+.nav-btn--prev::before {
+  transform: translateX(1.5px) rotate(135deg);
+}
+
+.nav-btn--next::before {
+  transform: translateX(-1.5px) rotate(-45deg);
 }
 
 .nav-btn:hover {
   background: var(--c-5h-soft);
   color: var(--c-5h-deep);
+}
+
+.nav-btn:active {
+  transform: scale(0.9);
 }
 
 .history-title {
@@ -1284,7 +1319,33 @@ body:not(.is-bars-armed) .ring-bar-fill {
   font-weight: 600;
   color: var(--text-primary);
   min-width: 220px;
-  text-align: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.history-title-range {
+  white-space: nowrap;
+}
+
+/* "进行中 / 已结束"做成小胶囊，整块 nowrap，永远不会被拆字 */
+.history-title-status {
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-mute);
+}
+
+.history-title-status.is-live {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+}
+
+/* 桌面端不需要强制换行；手机端用它把状态胶囊整块顶到第二行 */
+.history-title-break {
+  display: none;
 }
 
 .adjust-row {
@@ -3185,12 +3246,19 @@ body.is-ready .input-card {
     color 0.18s var(--ease-soft);
 }
 
+/* 展开提示：用描边画的下行 chevron，比 ▾ 字形更清晰、更耐看 */
 .picker-trigger::after {
-  content: '▾';
-  font-size: 0.7em;
-  color: var(--text-mute);
-  margin-left: 6px;
-  transition: color 0.18s var(--ease-soft);
+  content: '';
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-left: 8px;
+  margin-top: -3px;
+  border-right: 2px solid var(--text-mute);
+  border-bottom: 2px solid var(--text-mute);
+  border-radius: 0 0 2px 0;
+  transform: rotate(45deg);
+  transition: border-color 0.18s var(--ease-soft), transform 0.18s var(--ease-soft);
 }
 
 .picker-trigger:hover {
@@ -3199,12 +3267,12 @@ body.is-ready .input-card {
 
 .picker-trigger:hover::after,
 .picker-trigger:focus-visible::after {
-  color: var(--c-5h-deep);
+  border-color: var(--c-5h-deep);
 }
 
 .weekly-nav-title.picker-trigger:hover::after,
 .weekly-nav-title.picker-trigger:focus-visible::after {
-  color: var(--c-weekly-deep);
+  border-color: var(--c-weekly-deep);
 }
 
 /* 弹层遮罩 + 卡片 —— 复用 settings 弹窗的开/关动画语言，但更轻 */
@@ -3280,6 +3348,72 @@ body.is-ready .input-card {
 .picker-list::-webkit-scrollbar-thumb {
   background: rgba(120, 110, 100, 0.22);
   border-radius: 3px;
+}
+
+/* —— 日期分隔头 —— 自然地把每天的窗口分组，并标出当天 5h 总用量 + weekly 末值 */
+.picker-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 -8px;
+  padding: 9px 20px 7px;
+  background: linear-gradient(var(--bg-card) 75%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+/* 第一组紧贴列表顶，后面的组之间留出呼吸空隙，分隔感更自然 */
+.picker-item + .picker-day {
+  margin-top: 8px;
+}
+
+.picker-day-date {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+
+.picker-day-date em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-mute);
+}
+
+.picker-day-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.picker-day-stat {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.picker-day-stat--5h {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
+}
+
+.picker-day-stat--week {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
 }
 
 .picker-item {
@@ -3387,6 +3521,15 @@ body.is-ready .input-card {
 
 /* 手机：挑选弹层贴边一些，列表项也紧凑一档 */
 @media (max-width: 640px) {
+  /* 5h 历史标题：手机上把"进行中/已结束"胶囊整块顶到第二行，不再拆字换行 */
+  .history-title {
+    line-height: 1.35;
+  }
+  .history-title-break {
+    display: block;
+    flex-basis: 100%;
+    height: 0;
+  }
   .picker {
     width: 92vw;
     max-height: 75vh;
