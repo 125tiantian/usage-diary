@@ -3337,7 +3337,8 @@ body.is-ready .input-card {
 
 .picker-list {
   overflow-y: auto;
-  padding: 8px;
+  /* 顶部不留内边距：否则 sticky 日期头会吸在"距顶 8px"处，上一条窗口从缝里透上来 */
+  padding: 0 8px 8px;
   scrollbar-width: thin;
   scrollbar-color: rgba(120, 110, 100, 0.25) transparent;
 }
