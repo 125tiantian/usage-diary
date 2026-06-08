@@ -3378,24 +3378,37 @@ function buildWindowPickerItems() {
     cur.windows.push(w);
   }
 
+  const allRecs = state.records; // 全局按时间升序
   const items = [];
   for (const g of groups) {
     const d = g.dateD;
     // 这一天的 5h 总用量：各窗口末值之和
     const total5h = g.windows.reduce((s, w) => s + w.lastValue, 0);
-    // 这一天的 weekly 末值：当天最后一条记录的 weekly
-    let lastWeekly = null;
-    let lastTs = -1;
+    // 找出这组记录的时间范围与 weekly 末值
+    let firstTs = Infinity, lastTs = -1, endWeekly = 0;
     for (const w of g.windows) {
-      const r = w.records[w.records.length - 1];
-      if (r && r.timestamp > lastTs) { lastTs = r.timestamp; lastWeekly = r.weekly; }
+      for (const r of w.records) {
+        if (r.timestamp < firstTs) firstTs = r.timestamp;
+        if (r.timestamp > lastTs) { lastTs = r.timestamp; endWeekly = r.weekly; }
+      }
     }
+    // 这一天"用出去的"weekly = 当天末值 − 当天开始前的累计基线。
+    // 基线 = 同一周内、当天首条记录之前那条记录的 weekly；跨周或没有则记 0
+    // （weekly 是当周累计、周初清零，所以净消耗只能用末值减起点）
+    const weekStart = getWeekStart(firstTs, state.settings);
+    let baseWeekly = 0;
+    for (let i = 0; i < allRecs.length; i++) {
+      const r = allRecs[i];
+      if (r.timestamp >= firstTs) break;
+      if (r.timestamp >= weekStart) baseWeekly = r.weekly;
+    }
+    const weeklyUsed = Math.max(0, endWeekly - baseWeekly);
     items.push({
       type: 'header',
       dateLabel: `${d.getMonth() + 1}/${d.getDate()}`,
       dayLabel: `周${dayNames[d.getDay()]}`,
       total5h,
-      weekly: lastWeekly,
+      weekly: weeklyUsed,
     });
     for (const w of g.windows) {
       const startD = new Date(w.startTime);
