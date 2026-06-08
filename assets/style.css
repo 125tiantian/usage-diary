@@ -3532,11 +3532,24 @@ body.is-ready .input-card {
   .history-title {
     line-height: 1.35;
   }
+  /* 第二行用 order 排成 [占位][状态胶囊][箭头]：
+     左侧占位和右侧箭头等宽，胶囊就落在正中央，箭头自然靠右 */
+  .history-title-range { order: 1; }
   .history-title-break {
+    order: 2;
     display: block;
     flex-basis: 100%;
     height: 0;
   }
+  .history-title::before {
+    content: '';
+    order: 3;
+    flex: 0 0 auto;
+    width: 8px;
+    margin-right: 8px;
+  }
+  .history-title-status { order: 4; }
+  .history-title::after { order: 5; }
   .picker {
     width: 92vw;
     max-height: 75vh;
