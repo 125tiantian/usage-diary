@@ -45,6 +45,9 @@ const DEFAULT_SETTINGS = {
   // 只有设置内容真的改了才会更新（仅打开关掉面板不更新），
   // 这样 pull 时才能正确判断"云端 vs 本地谁的设置更新"，不会被本地虚假的新时间戳覆盖。
   lastModifiedAt: 0,
+  // "立即重置"按下的时刻们（硬重置闸门）。起点早于某道闸门的 5h 窗口到闸门即视为结束，
+  // 之后的记录必开新窗口——对应"官方临时重置额度时 5h 也一起清零"的真实行为。
+  hardResets: [],
 };
 
 // 配色 —— 不写死，从 CSS 变量动态读取，主题切换时会重新刷新
@@ -84,6 +87,10 @@ function refreshColors() {
 // 也处理"loadData 后第一条不是 from=0 / 数组共享 DEFAULT_SETTINGS"等防御性兜底。
 function migrateSettings(s) {
   if (!s || typeof s !== 'object') return s;
+  // hardResets 统一整理：深拷贝（防和 DEFAULT_SETTINGS 共享）、去掉非法值、排序去重
+  s.hardResets = Array.isArray(s.hardResets)
+    ? [...new Set(s.hardResets.filter((t) => typeof t === 'number' && isFinite(t)))].sort((a, b) => a - b)
+    : [];
   if (Array.isArray(s.weeklyRules) && s.weeklyRules.length > 0) {
     // 已是新格式：深拷贝一份，避免和 DEFAULT_SETTINGS 共享数组；并保证第一条对齐 from=0
     s.weeklyRules = s.weeklyRules.map((r) => ({ from: r.from, day: r.day, hour: r.hour }));
@@ -195,12 +202,38 @@ function ceilToStep(ts) {
   return floored === ts ? ts : floored + WINDOW_STEP_MS;
 }
 
+// 窗口起点之后的第一道硬重置闸门；没有则 null
+function firstHardResetAfter(startTs, settings) {
+  const list = settings && Array.isArray(settings.hardResets) ? settings.hardResets : [];
+  for (const h of list) {
+    if (h > startTs) return h;
+  }
+  return null;
+}
+
+// 某个起点的窗口在 ts 时刻是否还活着：5h 没走完，也没被硬重置切断
+function isWindowAliveAt(startTs, ts, settings) {
+  if (ts >= startTs + FIVE_HOURS_MS) return false;
+  const h = firstHardResetAfter(startTs, settings);
+  return h == null || ts < h;
+}
+
+// 给 ts 开新窗口时的起点：十分钟取整，但不能取整到最近一次硬重置之前去，
+// 否则新窗口会"生在闸门前"、刚开就被判定为已截断
+function newWindowIdFor(ts, settings) {
+  let id = floorToStep(ts);
+  const list = settings && Array.isArray(settings.hardResets) ? settings.hardResets : [];
+  for (const h of list) {
+    if (h <= ts && h > id) id = h;
+  }
+  return id;
+}
+
 // 给定一个时间戳和上一条记录，判断它属于哪个 5h 窗口
 function determineWindowId(ts, lastRecord) {
-  if (!lastRecord) return floorToStep(ts);
-  const lastWindowEnd = lastRecord.windowId + FIVE_HOURS_MS;
-  if (ts < lastWindowEnd) return lastRecord.windowId;
-  return floorToStep(ts);
+  if (!lastRecord) return newWindowIdFor(ts, state.settings);
+  if (isWindowAliveAt(lastRecord.windowId, ts, state.settings)) return lastRecord.windowId;
+  return newWindowIdFor(ts, state.settings);
 }
 
 // 把"按星期几 + 整点"的规则算出 ts 所在那一周的起点。这是老逻辑，抽成独立函数
@@ -374,6 +407,10 @@ function computeWindows(records) {
     w.firstValue = w.records[0].fiveH;
     w.lastValue = w.records[w.records.length - 1].fiveH;
     w.maxValue = Math.max(...w.records.map(r => r.fiveH));
+    // 被"立即重置"切断的窗口：实际终点提前到闸门那一刻
+    const cut = firstHardResetAfter(w.startTime, state.settings);
+    w.wasCut = cut != null && cut < w.endTime;
+    w.effectiveEnd = w.wasCut ? cut : w.endTime;
   }
   return Array.from(map.values()).sort((a, b) => a.startTime - b.startTime);
 }
@@ -388,8 +425,14 @@ function getWindowAdjustRange(target, allWindows) {
   const lastTs = recs[recs.length - 1].timestamp;
 
   // 起点下界：自家最晚一笔记录留得住 + 不能侵前一个窗口的地盘
+  // （前一个窗口被硬重置截断时，它的地盘只到闸门为止，不占满整个 5h）
   let minStart = lastTs - FIVE_HOURS_MS + 1;
-  if (prevWin) minStart = Math.max(minStart, prevWin.endTime);
+  if (prevWin) minStart = Math.max(minStart, prevWin.effectiveEnd != null ? prevWin.effectiveEnd : prevWin.endTime);
+  // 也不能挪到自家记录之前最近一道硬重置闸门的前面，不然窗口会被闸门腰斩
+  const gates = state.settings && Array.isArray(state.settings.hardResets) ? state.settings.hardResets : [];
+  for (const h of gates) {
+    if (h <= firstTs && h > minStart) minStart = h;
+  }
   minStart = ceilToStep(minStart);
 
   // 起点上界：自家最早一笔记录留得住 + 不能侵后一个窗口的地盘
@@ -400,11 +443,11 @@ function getWindowAdjustRange(target, allWindows) {
   return { minStart, maxStart };
 }
 
-// 当前是否还处于活跃窗口（不超过 5h 的窗口）
+// 当前是否还处于活跃窗口（5h 没走完、也没被硬重置切断的窗口）
 function getCurrentWindow(windows) {
   if (windows.length === 0) return null;
   const last = windows[windows.length - 1];
-  if (Date.now() < last.endTime) return last;
+  if (isWindowAliveAt(last.startTime, Date.now(), state.settings)) return last;
   return null;
 }
 
@@ -432,6 +475,14 @@ function computeRateSamples(records) {
   for (let i = 1; i < sorted.length; i++) {
     const prev = sorted[i - 1];
     const cur = sorted[i];
+
+    // 跨过周界（含硬重置）一律重开分段：哪怕新周第一笔的 weekly 数值没降下来
+    // （比如上周收尾本来就很低），也不能让旧周期的 5h 消耗串进新周期的格子里
+    if (getWeekStart(cur.timestamp, state.settings) !== getWeekStart(prev.timestamp, state.settings)) {
+      segStart = cur;
+      segStartIdx = i;
+      continue;
+    }
 
     if (cur.weekly < prev.weekly) {
       segStart = cur;
@@ -536,14 +587,14 @@ function resetDraft() {
   let prevWeekly = lastInWeek ? lastInWeek.weekly : 0;
   let isNew = false;
 
-  if (lastRecord && now < lastRecord.windowId + FIVE_HOURS_MS) {
-    // 还在最近一个 5h 窗口里
+  if (lastRecord && isWindowAliveAt(lastRecord.windowId, now, state.settings)) {
+    // 还在最近一个 5h 窗口里（没满 5h、也没被硬重置切断）
     windowId = lastRecord.windowId;
     prev5h = lastRecord.fiveH;
     isNew = false;
   } else {
     // 需要开新 5h 窗口
-    windowId = floorToStep(now);
+    windowId = newWindowIdFor(now, state.settings);
     prev5h = 0;
     isNew = true;
   }
@@ -576,7 +627,7 @@ function maybeRefreshDraft() {
   if (!untouched) {
     const lastRecord = state.records[state.records.length - 1];
     const now = Date.now();
-    const windowStillAlive = lastRecord && now < lastRecord.windowId + FIVE_HOURS_MS;
+    const windowStillAlive = lastRecord && isWindowAliveAt(lastRecord.windowId, now, state.settings);
     if (windowStillAlive) return;  // 同一个窗口内，保护用户的编辑
     // 窗口已过期 → 不管用户编辑了什么，往下走强制刷新
   }
@@ -892,10 +943,10 @@ async function handleSave() {
       cancelText: '再想想',
     });
     if (!ok) return;
-    // 对话框可能挂了很久跨过 5h 窗口边界——这时不能再当修正、否则会变成"追加新记录"
+    // 对话框可能挂了很久跨过 5h 窗口边界（或正好撞上硬重置）——这时不能再当修正
     const lastNow = state.records[state.records.length - 1];
     const stillSameWindow = lastNow && lastNow.windowId === expectedWindowId
-      && Date.now() < lastNow.windowId + FIVE_HOURS_MS;
+      && isWindowAliveAt(lastNow.windowId, Date.now(), state.settings);
     if (!stillSameWindow) {
       showToast('5h 窗口已经过去啦，刚才那一笔没替换哦');
       return;
@@ -1114,11 +1165,12 @@ function renderWeeklyChart(mode = 'update') {
       );
       if (recordsInWeek.length === 0) return null;
       const lastRecord = recordsInWeek[recordsInWeek.length - 1];
-      // X 坐标用窗口结束时间（整点），这样点在时间轴上不会乱飘。
-      // 但当前还没结束的活跃窗口例外——它的结束时间在未来，
-      // 画到未来会误导，用最后一条记录的真实时间即可。
-      const isActive = Date.now() < w.endTime;
-      const x = isActive ? lastRecord.timestamp : w.endTime;
+      // X 坐标用窗口实际结束时间（被硬重置截断的窗口到闸门为止），这样点在时间轴上不会乱飘。
+      // 两个例外改用最后一条记录的真实时间：活跃窗口（结束时间在未来，画过去会误导）、
+      // 终点越过本周右界的跨周窗口（不然点会探出图表外面）。
+      const isActive = isWindowAliveAt(w.startTime, Date.now(), state.settings);
+      const end = w.effectiveEnd != null ? w.effectiveEnd : w.endTime;
+      const x = isActive || end >= weekEnd ? lastRecord.timestamp : end;
       return { x, y: lastRecord.weekly };
     })
     .filter(Boolean);
@@ -1377,15 +1429,17 @@ function renderWindowDetail(windows) {
   if (idx < 0) state.selectedHistoryWindowId = w.id;
 
   const startD = new Date(w.startTime);
-  const endD = new Date(w.endTime);
+  // 时间范围显示到实际终点：被硬重置截断的窗口只到闸门那一刻，不画满 5h
+  const endD = new Date(w.effectiveEnd);
   const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
-  const isActive = Date.now() < w.endTime;
+  const isActive = isWindowAliveAt(w.startTime, Date.now(), state.settings);
+  const statusText = isActive ? '进行中' : w.wasCut ? '重置截断' : '已结束';
   const dateStr = `${startD.getMonth() + 1}/${startD.getDate()} 周${dayNames[startD.getDay()]}`;
   // 拆成"范围"和"状态"两段，各自 nowrap：手机上换行时整块下移，不会把"进行中"拆字
   $('#history-title').innerHTML =
     `<span class="history-title-range">${dateStr} ${hm(startD)} - ${hm(endD)}</span>` +
     `<i class="history-title-break" aria-hidden="true"></i>` +
-    `<span class="history-title-status${isActive ? ' is-live' : ''}">${isActive ? '进行中' : '已结束'}</span>`;
+    `<span class="history-title-status${isActive ? ' is-live' : ''}">${statusText}</span>`;
 
   // 总结
   const finalVal = w.lastValue;
@@ -1466,7 +1520,7 @@ function renderWindowDetail(windows) {
         x: {
           type: 'linear',
           min: w.startTime,
-          max: w.endTime,
+          max: w.effectiveEnd,
           grid: { color: COLORS.divider, drawBorder: false },
           ticks: {
             color: COLORS.textSec,
@@ -1794,15 +1848,30 @@ async function markWeeklyResetNow() {
   const ok = await confirmDialog({
     icon: '🌱',
     title: '从这一刻起算新一周？',
-    message: '之前的周和 5h 都不会动哦～\n但从现在起 weekly 重新从 0 开始，距下次重置也从这里再 +7 天。',
+    message: '之前的记录会原样留在上一周～\n从现在起 weekly 从 0 重新出发；正在跑的 5h 窗口也就此画上句号，下一笔会开一个全新窗口。',
     confirmText: '从这里出发',
     cancelText: '再想想',
   });
   if (!ok) return;
 
-  // anchor 钉到整点而不是任意时刻，让"周X · HH:00"显示和实际重置时刻完全一致
-  const anchorTs = floorToHour(Date.now());
+  // anchor 钉到整点而不是任意时刻，让"周X · HH:00"显示和实际重置时刻完全一致。
+  // 但取整不能把按钮之前已记的数据划进新一周（那是旧周期的数值），
+  // 有记录落在取整点之后时，把锚点往后挪到最后一笔之后
+  let anchorTs = floorToHour(Date.now());
+  let lastRecTs = -Infinity;
+  for (const r of state.records) {
+    if (r.timestamp > lastRecTs) lastRecTs = r.timestamp;
+  }
+  if (lastRecTs >= anchorTs) {
+    anchorTs = floorToStep(Date.now());
+    if (lastRecTs >= anchorTs) anchorTs = lastRecTs + 1;
+  }
   const anchorD = new Date(anchorTs);
+
+  // 记下这道硬重置闸门：起点早于它的 5h 窗口到此为止，下一笔必开新窗口
+  if (!Array.isArray(state.settings.hardResets)) state.settings.hardResets = [];
+  state.settings.hardResets.push(anchorTs);
+  state.settings.hardResets.sort((a, b) => a - b);
 
   // 链尾可能挂着一条"还没生效"的未来规则——在设置里改过「周重置时间」会留下它
   // （from = 下一个目标时刻，比"现在"晚）。这种情况下直接 appendWeeklyRule 会撞上
@@ -3384,25 +3453,32 @@ function buildWindowPickerItems() {
     const d = g.dateD;
     // 这一天的 5h 总用量：各窗口末值之和
     const total5h = g.windows.reduce((s, w) => s + w.lastValue, 0);
-    // 找出这组记录的时间范围与 weekly 末值
-    let firstTs = Infinity, lastTs = -1, endWeekly = 0;
-    for (const w of g.windows) {
-      for (const r of w.records) {
-        if (r.timestamp < firstTs) firstTs = r.timestamp;
-        if (r.timestamp > lastTs) { lastTs = r.timestamp; endWeekly = r.weekly; }
-      }
-    }
-    // 这一天"用出去的"weekly = 当天末值 − 当天开始前的累计基线。
-    // 基线 = 同一周内、当天首条记录之前那条记录的 weekly；跨周或没有则记 0
-    // （weekly 是当周累计、周初清零，所以净消耗只能用末值减起点）
-    const weekStart = getWeekStart(firstTs, state.settings);
-    let baseWeekly = 0;
+    // 这一天的记录拉平排好序——净消耗要按周期分段算，因为当天可能正好跨过周重置
+    const dayRecs = g.windows.flatMap((w) => w.records).sort((a, b) => a.timestamp - b.timestamp);
+    const firstTs = dayRecs[0].timestamp;
+    // 基线 = 同一周内、当天首条记录之前最后一笔的 weekly；跨周或没有则记 0
+    let segWeek = getWeekStart(firstTs, state.settings);
+    let segBase = 0;
     for (let i = 0; i < allRecs.length; i++) {
       const r = allRecs[i];
       if (r.timestamp >= firstTs) break;
-      if (r.timestamp >= weekStart) baseWeekly = r.weekly;
+      if (r.timestamp >= segWeek) segBase = r.weekly;
     }
-    const weeklyUsed = Math.max(0, endWeekly - baseWeekly);
+    // 每个周期段贡献"段末值 − 段基线"；跨过周界就结清旧段、新段从 0 重新累计。
+    // 以前直接拿"当天末值 − 基线"，重置当天末值是新周期的小值、基线是旧周期的大值，
+    // 相减成负被夹成 0——真实消耗整天被吞掉，这里就是 6/8 显示"周 0%"的根源
+    let weeklyUsed = 0;
+    let segLast = segBase;
+    for (const r of dayRecs) {
+      const wk = getWeekStart(r.timestamp, state.settings);
+      if (wk !== segWeek) {
+        weeklyUsed += Math.max(0, segLast - segBase);
+        segWeek = wk;
+        segBase = 0;
+      }
+      segLast = r.weekly;
+    }
+    weeklyUsed += Math.max(0, segLast - segBase);
     items.push({
       type: 'header',
       dateLabel: `${d.getMonth() + 1}/${d.getDate()}`,
@@ -3412,9 +3488,11 @@ function buildWindowPickerItems() {
     });
     for (const w of g.windows) {
       const startD = new Date(w.startTime);
-      const endD = new Date(w.endTime);
-      const isActive = Date.now() < w.endTime;
-      const tag = isActive ? '<span class="picker-tag picker-tag--live">进行中</span>' : '';
+      const endD = new Date(w.effectiveEnd);
+      const isActive = isWindowAliveAt(w.startTime, Date.now(), state.settings);
+      const tag = isActive
+        ? '<span class="picker-tag picker-tag--live">进行中</span>'
+        : w.wasCut ? '<span class="picker-tag picker-tag--soft">重置截断</span>' : '';
       const meta = `${w.lastValue}% · ${w.records.length} 条`;
       items.push({
         type: 'item',
