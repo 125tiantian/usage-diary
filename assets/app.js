@@ -1188,7 +1188,15 @@ function renderWeeklyChart(mode = 'update') {
   let predictionText = '';
   let predictionClass = '';
   if (isCurrentWeek && weekRecords.length >= 2) {
-    const first = weekRecords[0];
+    // 速率只用"最后一段单调上升"的记录算。周内 weekly 一旦掉落（比如把周重置
+    // 时间改到实际重置稍前，旧周期最后几笔 27、28 落进了新一周，随后掉回 0 重新爬），
+    // 直接拿本周第一条当起点会把净消耗算成负数，预测整个被吞掉。
+    // 和 computeRateSamples 的分段口径一致：掉落处重开一段，起点取最后一段的开头。
+    let segStartIdx = 0;
+    for (let i = 1; i < weekRecords.length; i++) {
+      if (weekRecords[i].weekly < weekRecords[i - 1].weekly) segStartIdx = i;
+    }
+    const first = weekRecords[segStartIdx];
     const last = weekRecords[weekRecords.length - 1];
     const elapsed = last.timestamp - first.timestamp;
     const consumed = last.weekly - first.weekly;
