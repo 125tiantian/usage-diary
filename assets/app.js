@@ -93,7 +93,12 @@ function migrateSettings(s) {
     : [];
   if (Array.isArray(s.weeklyRules) && s.weeklyRules.length > 0) {
     // 已是新格式：深拷贝一份，避免和 DEFAULT_SETTINGS 共享数组；并保证第一条对齐 from=0
-    s.weeklyRules = s.weeklyRules.map((r) => ({ from: r.from, day: r.day, hour: r.hour }));
+    // kind 是规则的"出身"标记（如 'realign' = 立即重置后自动归位的那条），要原样保留，
+    // 重置时间线靠它区分"正常周期"和"用户改过设置"
+    s.weeklyRules = s.weeklyRules.map((r) => (
+      r.kind ? { from: r.from, day: r.day, hour: r.hour, kind: r.kind }
+             : { from: r.from, day: r.day, hour: r.hour }
+    ));
     if (s.weeklyRules[0].from !== 0) {
       s.weeklyRules.unshift({ from: 0, day: s.weeklyResetDay, hour: s.weeklyResetHour });
     }
@@ -120,10 +125,13 @@ function appendWeeklyRule(settings, rule) {
     console.warn('appendWeeklyRule: rule.from 比末尾还早，忽略', rule, last);
     return;
   }
+  const cloned = rule.kind
+    ? { from: rule.from, day: rule.day, hour: rule.hour, kind: rule.kind }
+    : { from: rule.from, day: rule.day, hour: rule.hour };
   if (last && last.from === rule.from) {
-    rules[rules.length - 1] = { from: rule.from, day: rule.day, hour: rule.hour };
+    rules[rules.length - 1] = cloned;
   } else {
-    rules.push({ from: rule.from, day: rule.day, hour: rule.hour });
+    rules.push(cloned);
   }
   settings.weeklyResetDay = rule.day;
   settings.weeklyResetHour = rule.hour;
@@ -1851,12 +1859,16 @@ function renderConfigSummary() {
   }
 }
 
-// 用户被 Anthropic 临时重置了 weekly 额度时按一下，把"现在"钉为新一周起点
+// 用户被 Anthropic 临时重置了 weekly 额度时按一下，把"现在"钉为新一周起点。
+// 注意语义：官方临时重置只是"中途清零一次"，每周固定的重置日程并不会跟着挪——
+// 比如正常周一刷新、周三被临时刷了，那这个短周是"周三 → 下周一"，之后照旧每周一刷新。
+// 所以这里除了钉新起点，还要再安排一条"到下个正常重置时刻自动归位"的规则（kind:'realign'），
+// 让短周在正常时刻结束、之后的周期回到原来的节奏上。
 async function markWeeklyResetNow() {
   const ok = await confirmDialog({
     icon: '🌱',
     title: '从这一刻起算新一周？',
-    message: '之前的记录会原样留在上一周～\n从现在起 weekly 从 0 重新出发；正在跑的 5h 窗口也就此画上句号，下一笔会开一个全新窗口。',
+    message: '之前的记录会原样留在上一周～\n从现在起 weekly 从 0 重新出发，到下个正常重置时刻自动归位，每周的重置节奏保持不变；正在跑的 5h 窗口也就此画上句号，下一笔会开一个全新窗口。',
     confirmText: '从这里出发',
     cancelText: '再想想',
   });
@@ -1874,7 +1886,6 @@ async function markWeeklyResetNow() {
     anchorTs = floorToStep(Date.now());
     if (lastRecTs >= anchorTs) anchorTs = lastRecTs + 1;
   }
-  const anchorD = new Date(anchorTs);
 
   // 记下这道硬重置闸门：起点早于它的 5h 窗口到此为止，下一笔必开新窗口
   if (!Array.isArray(state.settings.hardResets)) state.settings.hardResets = [];
@@ -1893,12 +1904,28 @@ async function markWeeklyResetNow() {
     }
   }
 
-  // 往规则链末尾追加一条新规则——之前那一段的 day/hour 自动留在 rules[len-2]，
-  // 翻 ◀ 时上一段会按"重置前那一刻的真实规则"切，不会被锁死成史前期那条老规则。
+  // 剥完未来规则后，链尾那条就是"当前真正在生效的每周日程"。
+  // 临时重置不改日程，所以新规则沿用它的 day/hour，而不是按下按钮那一刻的星期/钟点。
+  const effRule = Array.isArray(rules) && rules.length > 0 ? rules[rules.length - 1] : null;
+  const effDay = effRule ? effRule.day : state.settings.weeklyResetDay;
+  const effHour = effRule ? effRule.hour : state.settings.weeklyResetHour;
+
+  // 往规则链末尾追加两条：
+  // 1) 锚点规则：短周从"现在"起算——之前那一段的 day/hour 自动留在 rules[len-2]，
+  //    翻 ◀ 时上一段会按"重置前那一刻的真实规则"切，不会被锁死成史前期那条老规则；
+  // 2) 归位规则（kind:'realign'）：短周到下个正常重置时刻结束，之后回到每周固定节奏。
+  //    getWeekEnd 碰到它会把短周截断在正常时刻，getWeekStart 从它起每 7 天一轮，
+  //    正好和原日程对齐。
   appendWeeklyRule(state.settings, {
     from: anchorTs,
-    day: anchorD.getDay(),
-    hour: anchorD.getHours(),
+    day: effDay,
+    hour: effHour,
+  });
+  appendWeeklyRule(state.settings, {
+    from: nextOccurrence(anchorTs, effDay, effHour),
+    day: effDay,
+    hour: effHour,
+    kind: 'realign',
   });
   state.settings.lastModifiedAt = Date.now();
   state.selectedWeekStart = null;
@@ -3381,8 +3408,13 @@ function openPicker(kind) {
   } else if (kind === 'week') {
     titleEl.textContent = '挑一周';
     items = buildWeekPickerItems();
+  } else if (kind === 'resets') {
+    titleEl.textContent = '🔄 重置时间线';
   }
-  if (items.length === 0) {
+  if (kind === 'resets') {
+    // 重置时间线是纯展示，不走"可点选列表"那套渲染
+    list.innerHTML = buildResetTimelineHtml();
+  } else if (items.length === 0) {
     list.innerHTML = `<div class="picker-empty">还没有可挑的～</div>`;
   } else {
     list.innerHTML = items.map((it) => {
@@ -3576,6 +3608,132 @@ function countRecordsInRange(records, fromTs, toTs) {
     if (r.timestamp >= fromTs && r.timestamp < toTs) c++;
   }
   return c;
+}
+
+/* —— 重置时间线 ——
+   Weekly 节奏卡里的「重置记录」入口打开。把每一次周期边界铺成一条按时间倒序的时间线：
+   - 每周重置：按规则推算出来的正常周期边界
+   - 官方临时重置：用户按「立即重置」留下的真实记录（hardResets）
+   - 改了重置时间：用户在设置里手动调过规则的节点
+   每条带"距上次隔多久"和"重置前 weekly 用到多少"，方便观察重置周期的规律——
+   特别是官方临时重置的频率，和被刷之前用量到了什么水平。 */
+
+// 收集所有已经发生过的重置事件（按时间倒序），并补上间隔和重置前用量
+function collectResetEvents() {
+  const records = state.records;
+  const settings = state.settings;
+  if (records.length === 0) return [];
+  const now = Date.now();
+  const currentWeekStart = getWeekStart(now, settings);
+  const earliest = records[0].timestamp;
+
+  // 从本周起点往回铺周边界，铺到第一笔记录所在的那一周为止。
+  // 和 buildWeekPickerItems 同款走法：跨规则段时自动落在被截短的残缺周边界上。
+  const starts = [];
+  let cursor = currentWeekStart;
+  for (let i = 0; i < 520; i++) {
+    starts.push(cursor);
+    if (cursor <= earliest) break;
+    const prev = getWeekStart(cursor - 1, settings);
+    if (prev >= cursor) break; // 兜底防呆
+    cursor = prev;
+  }
+
+  const hardSet = new Set(Array.isArray(settings.hardResets) ? settings.hardResets : []);
+  // from → 规则。规则链上 from > 0 的节点要么是硬重置、要么是改设置、要么是归位规则；
+  // 硬重置优先按 hardResets 认，归位规则（kind:'realign'）本质是正常周期，都不算"改设置"。
+  const ruleByFrom = new Map();
+  const rules = Array.isArray(settings.weeklyRules) ? settings.weeklyRules : [];
+  for (let i = 1; i < rules.length; i++) ruleByFrom.set(rules[i].from, rules[i]);
+
+  const events = starts.map((ts) => {
+    let type = 'week';
+    if (hardSet.has(ts)) {
+      type = 'hard';
+    } else {
+      const r = ruleByFrom.get(ts);
+      if (r && r.kind !== 'realign') type = 'rule';
+    }
+    return { ts, type };
+  });
+  // 理论上每道硬重置闸门都对应一个周边界，防御性兜底：万一漏了就补进来
+  for (const h of hardSet) {
+    if (h <= now && h >= earliest && !events.some((e) => e.ts === h)) {
+      events.push({ ts: h, type: 'hard' });
+    }
+  }
+  events.sort((a, b) => b.ts - a.ts);
+
+  // 补上"距上次重置隔了多久"和"重置前 weekly 用到多少"
+  for (let i = 0; i < events.length; i++) {
+    const cur = events[i];
+    const prev = events[i + 1]; // 时间上更早的那一次
+    cur.gapMs = prev ? cur.ts - prev.ts : null;
+    // 重置前的用量：上一次重置之后、这一次重置之前的最后一笔记录
+    const lowerBound = prev ? prev.ts : -Infinity;
+    let before = null;
+    for (let j = records.length - 1; j >= 0; j--) {
+      const r = records[j];
+      if (r.timestamp < lowerBound) break;
+      if (r.timestamp < cur.ts) { before = r; break; }
+    }
+    cur.weeklyBefore = before ? before.weekly : null;
+  }
+  return events;
+}
+
+// 把重置间隔格式化成"X 天 / X 天 Y 小时 / X 小时"
+function formatGapDuration(ms) {
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const totalH = Math.round(ms / ONE_HOUR_MS);
+  if (totalH < 24) return `${Math.max(1, totalH)} 小时`;
+  const d = Math.floor(totalH / 24);
+  const h = totalH % 24;
+  return h > 0 ? `${d} 天 ${h} 小时` : `${d} 天`;
+}
+
+function buildResetTimelineHtml() {
+  const events = collectResetEvents();
+  if (events.length === 0) {
+    return '<div class="picker-empty">还没有记录～记几笔之后再来看吧 ✨</div>';
+  }
+  const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  const fmtTs = (ts) => {
+    const d = new Date(ts);
+    return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${hm(d)}`;
+  };
+  const TYPE_META = {
+    next: { label: '下次重置', icon: '🔮' },
+    week: { label: '每周重置', icon: '📅' },
+    hard: { label: '官方临时重置', icon: '⚡' },
+    rule: { label: '改了重置时间', icon: '✏️' },
+  };
+
+  // 最上面放一条"下次重置"的预告，下面接所有已发生的重置
+  const now = Date.now();
+  const nextTs = getWeekEnd(getWeekStart(now, state.settings), state.settings);
+  const rows = [{ ts: nextTs, type: 'next', gapMs: null, weeklyBefore: null }, ...events];
+
+  return '<div class="reset-tl">' + rows.map((e) => {
+    const t = TYPE_META[e.type];
+    const metaParts = [];
+    if (e.type === 'next') {
+      metaParts.push(formatRemainingUntilReset(Math.max(0, nextTs - now)));
+    } else {
+      metaParts.push(e.gapMs != null ? `距上次 ${formatGapDuration(e.gapMs)}` : '记录从这之后开始');
+      if (e.weeklyBefore != null) metaParts.push(`重置前用到 ${e.weeklyBefore}%`);
+    }
+    return `<div class="reset-tl-item is-${e.type}">
+      <span class="reset-tl-rail"><span class="reset-tl-dot"></span></span>
+      <span class="reset-tl-body">
+        <span class="reset-tl-line1">
+          <span class="reset-tl-time">${fmtTs(e.ts)}</span>
+          <span class="reset-tl-tag">${t.icon} ${t.label}</span>
+        </span>
+        <span class="reset-tl-meta">${metaParts.join(' · ')}</span>
+      </span>
+    </div>`;
+  }).join('') + '</div>';
 }
 
 function pickWindowFromList(idStr) {

@@ -57,7 +57,7 @@
   <!-- Chart.js (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <link rel="stylesheet" href="assets/style.css?v=2.67">
+  <link rel="stylesheet" href="assets/style.css?v=2.68">
 </head>
 <body>
 
@@ -258,6 +258,8 @@
           <canvas id="weekly-chart"></canvas>
         </div>
         <div class="weekly-prediction" id="weekly-prediction">—</div>
+        <!-- 重置时间线入口：低频功能，做成一行安静的小字，点开弹层看历史重置记录 -->
+        <button class="reset-history-btn" type="button" data-picker="resets">🔄 重置记录 <span class="reset-history-chev">›</span></button>
       </div>
 
     </section>
@@ -563,7 +565,7 @@
         <div class="settings-footer">
           额度小日记 · 缓解 Claude 额度焦虑的小手账<br>
           数据存在你的浏览器本地，配了云同步会自动备份到 jsonbin.io
-          <div class="settings-version">v2.67</div>
+          <div class="settings-version">v2.68</div>
         </div>
 
       </div>
@@ -585,7 +587,7 @@
     </div>
   </div>
 
-  <script src="assets/app.js?v=2.67"></script>
+  <script src="assets/app.js?v=2.68"></script>
 </body>
 </html>
 <!-- Triggered workflow run on  -->
