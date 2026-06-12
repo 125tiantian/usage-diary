@@ -1984,14 +1984,16 @@ function applyWeeklySettings() {
     const targetFrom = nextOccurrence(now, newDay, newHour);
     const rules = state.settings.weeklyRules;
     const last = rules && rules.length > 0 ? rules[rules.length - 1] : null;
+    // kind:'manual' 标记"用户亲手改的日程"，重置时间线靠它显示「改了重置时间」；
+    // 没这个标记的历史老节点只能靠启发式猜出身
     if (last && last.from > now) {
       // 末条规则还没生效（上次改设置/未来 anchor 还挂着）→ 替换，不追加，
       // 避免链上堆一串都没生效过的"幽灵规则"
-      rules[rules.length - 1] = { from: targetFrom, day: newDay, hour: newHour };
+      rules[rules.length - 1] = { from: targetFrom, day: newDay, hour: newHour, kind: 'manual' };
       state.settings.weeklyResetDay = newDay;
       state.settings.weeklyResetHour = newHour;
     } else {
-      appendWeeklyRule(state.settings, { from: targetFrom, day: newDay, hour: newHour });
+      appendWeeklyRule(state.settings, { from: targetFrom, day: newDay, hour: newHour, kind: 'manual' });
     }
     state.settings.lastModifiedAt = now;
     // 周起点变了，"正在看的是哪一周"这个选中状态也失效——重置回"本周"
@@ -3640,19 +3642,35 @@ function collectResetEvents() {
   }
 
   const hardSet = new Set(Array.isArray(settings.hardResets) ? settings.hardResets : []);
-  // from → 规则。规则链上 from > 0 的节点要么是硬重置、要么是改设置、要么是归位规则；
-  // 硬重置优先按 hardResets 认，归位规则（kind:'realign'）本质是正常周期，都不算"改设置"。
-  const ruleByFrom = new Map();
+  // 给规则链上每个 from > 0 的节点定性。有 kind 标记的直接认：
+  //   'realign' = 立即重置后的自动归位 → 本质是正常每周重置
+  //   'manual'  = 用户亲手改的日程 → 改了重置时间
+  // 没标记的是老版本攒下来的节点——当年「立即重置」和「改重置时间」留下的痕迹一模一样，
+  // 只能启发式猜：和前一段日程相同、或和现在的日程相同（用户改时间基本都是把被
+  // 旧版立即重置带歪的日程掰回真实重置时刻，那一刻本来就是正常每周重置）→ 每周重置；
+  // 落在奇怪时刻的 → 多半是当年按「立即重置」记下的官方临时重置。
   const rules = Array.isArray(settings.weeklyRules) ? settings.weeklyRules : [];
-  for (let i = 1; i < rules.length; i++) ruleByFrom.set(rules[i].from, rules[i]);
+  const curDay = settings.weeklyResetDay;
+  const curHour = settings.weeklyResetHour;
+  const ruleTypeByFrom = new Map();
+  for (let i = 1; i < rules.length; i++) {
+    const r = rules[i];
+    const prev = rules[i - 1];
+    let t;
+    if (r.kind === 'realign') t = 'week';
+    else if (r.kind === 'manual') t = 'rule';
+    else if (r.day === prev.day && r.hour === prev.hour) t = 'week';
+    else if (r.day === curDay && r.hour === curHour) t = 'week';
+    else t = 'hard';
+    ruleTypeByFrom.set(r.from, t);
+  }
 
   const events = starts.map((ts) => {
-    let type = 'week';
+    let type;
     if (hardSet.has(ts)) {
-      type = 'hard';
+      type = 'hard'; // 真实记录优先：v2.66 起立即重置会留闸门，比启发式可靠
     } else {
-      const r = ruleByFrom.get(ts);
-      if (r && r.kind !== 'realign') type = 'rule';
+      type = ruleTypeByFrom.get(ts) || 'week';
     }
     return { ts, type };
   });
