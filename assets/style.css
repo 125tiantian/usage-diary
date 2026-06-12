@@ -3349,6 +3349,67 @@ body.is-ready .input-card {
   animation: slideUp 0.24s var(--ease-soft);
 }
 
+/* PC 宽屏下弹层按内容"量体裁衣"：
+   手机上 360px 刚好，但桌面屏幕大，统一 360px × 70vh 显得又窄又矮。
+   挑周列表内容最简单，稍微加宽即可；5h 窗口列表一行要放
+   "日期 + 星期 + 两个统计胶囊"，重置时间线一行说明也偏长，给得更宽，
+   同时放高一点，少翻几次滚轮。 */
+@media (min-width: 700px) {
+  .picker {
+    max-height: 84vh;
+  }
+  .picker-mask[data-picker-kind="week"] .picker {
+    width: 460px;
+  }
+  .picker-mask[data-picker-kind="window"] .picker {
+    width: 530px;
+  }
+  .picker-mask[data-picker-kind="resets"] .picker {
+    width: 500px;
+  }
+
+  /* 框放大了，内容也跟着放大半号：
+     这些列表行都是"左标题右数据"两头对齐，只拉宽不放大字号的话，
+     中间会空出一大片显得稀疏。字号 + 内边距同步加，密度感才不变。 */
+  .picker-head {
+    font-size: 16px;
+    padding: 16px 20px;
+  }
+  .picker-item {
+    padding: 13px 14px;
+  }
+  .picker-item-title {
+    font-size: 14.5px;
+  }
+  .picker-item-meta {
+    font-size: 13px;
+  }
+  .picker-tag {
+    font-size: 11.5px;
+  }
+  .picker-day-date {
+    font-size: 14px;
+  }
+  .picker-day-date em {
+    font-size: 12px;
+  }
+  .picker-day-stat {
+    font-size: 12px;
+  }
+  .reset-tl {
+    padding: 12px 16px 8px;
+  }
+  .reset-tl-time {
+    font-size: 14.5px;
+  }
+  .reset-tl-tag {
+    font-size: 11.5px;
+  }
+  .reset-tl-meta {
+    font-size: 13px;
+  }
+}
+
 .picker-head {
   display: flex;
   align-items: center;
