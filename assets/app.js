@@ -48,6 +48,10 @@ const DEFAULT_SETTINGS = {
   // "立即重置"按下的时刻们（硬重置闸门）。起点早于某道闸门的 5h 窗口到闸门即视为结束，
   // 之后的记录必开新窗口——对应"官方临时重置额度时 5h 也一起清零"的真实行为。
   hardResets: [],
+  // 重置时间线的"人工定性"：把某个周边界时刻手动钉成 'week'(自然重置) 或 'hard'(刷新重置)。
+  // 键是周边界的时间戳（字符串），值是用户亲手选的类型。优先级最高，盖过 hardResets 闸门
+  // 和老数据启发式——用户点时间线上的圆点切一下就写这里，专治启发式猜错的老记录。
+  resetKindOverrides: {},
 };
 
 // 配色 —— 不写死，从 CSS 变量动态读取，主题切换时会重新刷新
@@ -91,6 +95,13 @@ function migrateSettings(s) {
   s.hardResets = Array.isArray(s.hardResets)
     ? [...new Set(s.hardResets.filter((t) => typeof t === 'number' && isFinite(t)))].sort((a, b) => a - b)
     : [];
+  // resetKindOverrides 统一整理：深拷贝成自家对象（防和 DEFAULT_SETTINGS 共享），
+  // 只保留"数字时间戳键 + week/hard 值"的合法条目，其余一律丢掉
+  s.resetKindOverrides = (s.resetKindOverrides && typeof s.resetKindOverrides === 'object' && !Array.isArray(s.resetKindOverrides))
+    ? Object.fromEntries(
+        Object.entries(s.resetKindOverrides).filter(([k, v]) => /^\d+$/.test(k) && (v === 'week' || v === 'hard'))
+      )
+    : {};
   if (Array.isArray(s.weeklyRules) && s.weeklyRules.length > 0) {
     // 已是新格式：深拷贝一份，避免和 DEFAULT_SETTINGS 共享数组；并保证第一条对齐 from=0
     // kind 是规则的"出身"标记（如 'realign' = 立即重置后自动归位的那条），要原样保留，
@@ -3614,11 +3625,12 @@ function countRecordsInRange(records, fromTs, toTs) {
 
 /* —— 重置时间线 ——
    Weekly 节奏卡里的「重置记录」入口打开。把每一次周期边界铺成一条按时间倒序的时间线：
-   - 每周重置：按规则推算出来的正常周期边界
-   - 官方临时重置：用户按「立即重置」留下的真实记录（hardResets）
-   - 改了重置时间：用户在设置里手动调过规则的节点
+   - 自然重置(week)：按规则推算出来的正常周期边界
+   - 刷新重置(hard)：用户按「立即重置」留下的真实记录（hardResets），即官方临时刷新额度
+   - 改了重置时间(rule)：用户在设置里手动调过规则的节点
    每条带"距上次隔多久"和"重置前 weekly 用到多少"，方便观察重置周期的规律——
-   特别是官方临时重置的频率，和被刷之前用量到了什么水平。 */
+   特别是刷新重置的频率，和被刷之前用量到了什么水平。
+   自然/刷新两类的定性可能被启发式猜错，用户点圆点能手动翻（写进 resetKindOverrides）。 */
 
 // 收集所有已经发生过的重置事件（按时间倒序），并补上间隔和重置前用量
 function collectResetEvents() {
@@ -3665,9 +3677,19 @@ function collectResetEvents() {
     ruleTypeByFrom.set(r.from, t);
   }
 
+  // 人工定性：用户在时间线上点圆点切过的，优先级最高，盖过闸门和启发式
+  const overrides = (settings.resetKindOverrides && typeof settings.resetKindOverrides === 'object')
+    ? settings.resetKindOverrides : {};
+  const overrideOf = (ts) => {
+    const v = overrides[ts]; // 键是字符串，用数字取值会自动转字符串，对得上
+    return (v === 'week' || v === 'hard') ? v : null;
+  };
+
   const events = starts.map((ts) => {
-    let type;
-    if (hardSet.has(ts)) {
+    let type = overrideOf(ts);
+    if (type) {
+      // 人工钉死，不再走下面的判定
+    } else if (hardSet.has(ts)) {
       type = 'hard'; // 真实记录优先：v2.66 起立即重置会留闸门，比启发式可靠
     } else {
       type = ruleTypeByFrom.get(ts) || 'week';
@@ -3677,7 +3699,7 @@ function collectResetEvents() {
   // 理论上每道硬重置闸门都对应一个周边界，防御性兜底：万一漏了就补进来
   for (const h of hardSet) {
     if (h <= now && h >= earliest && !events.some((e) => e.ts === h)) {
-      events.push({ ts: h, type: 'hard' });
+      events.push({ ts: h, type: overrideOf(h) || 'hard' });
     }
   }
   events.sort((a, b) => b.ts - a.ts);
@@ -3710,6 +3732,14 @@ function formatGapDuration(ms) {
   return h > 0 ? `${d} 天 ${h} 小时` : `${d} 天`;
 }
 
+// 重置时间线各类型的文案 / 图标。提到模块作用域，渲染和点圆点切换共用一份。
+const RESET_TYPE_META = {
+  next: { label: '下次重置', icon: '🔮' },
+  week: { label: '自然重置', icon: '📅' },
+  hard: { label: '刷新重置', icon: '⚡' },
+  rule: { label: '改了重置时间', icon: '✏️' },
+};
+
 function buildResetTimelineHtml() {
   const events = collectResetEvents();
   if (events.length === 0) {
@@ -3720,20 +3750,14 @@ function buildResetTimelineHtml() {
     const d = new Date(ts);
     return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${hm(d)}`;
   };
-  const TYPE_META = {
-    next: { label: '下次重置', icon: '🔮' },
-    week: { label: '每周重置', icon: '📅' },
-    hard: { label: '官方临时重置', icon: '⚡' },
-    rule: { label: '改了重置时间', icon: '✏️' },
-  };
 
   // 最上面放一条"下次重置"的预告，下面接所有已发生的重置
   const now = Date.now();
   const nextTs = getWeekEnd(getWeekStart(now, state.settings), state.settings);
   const rows = [{ ts: nextTs, type: 'next', gapMs: null, weeklyBefore: null }, ...events];
 
-  return '<div class="reset-tl">' + rows.map((e) => {
-    const t = TYPE_META[e.type];
+  const body = rows.map((e) => {
+    const t = RESET_TYPE_META[e.type];
     const metaParts = [];
     if (e.type === 'next') {
       metaParts.push(formatRemainingUntilReset(Math.max(0, nextTs - now)));
@@ -3741,8 +3765,13 @@ function buildResetTimelineHtml() {
       metaParts.push(e.gapMs != null ? `距上次 ${formatGapDuration(e.gapMs)}` : '记录从这之后开始');
       if (e.weeklyBefore != null) metaParts.push(`重置前用到 ${e.weeklyBefore}%`);
     }
+    // 已发生的"自然/刷新重置"才让圆点可点切换；下次重置(预告)和改了重置时间不参与
+    const toggleable = (e.type === 'week' || e.type === 'hard');
+    const dot = toggleable
+      ? `<span class="reset-tl-dot is-toggleable" role="button" tabindex="0" data-reset-toggle="${e.ts}" title="点一下切换：自然重置 ⇄ 刷新重置" aria-label="切换这条的重置类型"></span>`
+      : `<span class="reset-tl-dot"></span>`;
     return `<div class="reset-tl-item is-${e.type}">
-      <span class="reset-tl-rail"><span class="reset-tl-dot"></span></span>
+      <span class="reset-tl-rail">${dot}</span>
       <span class="reset-tl-body">
         <span class="reset-tl-line1">
           <span class="reset-tl-time">${fmtTs(e.ts)}</span>
@@ -3751,7 +3780,44 @@ function buildResetTimelineHtml() {
         <span class="reset-tl-meta">${metaParts.join(' · ')}</span>
       </span>
     </div>`;
-  }).join('') + '</div>';
+  }).join('');
+
+  // 顶上给一句小提示，让用户知道圆点能点
+  const hint = '<div class="reset-tl-hint">点左侧圆点可切换 📅 自然重置 ⇄ ⚡ 刷新重置</div>';
+  return '<div class="reset-tl">' + hint + body + '</div>';
+}
+
+// 点时间线上的圆点：在"自然重置(week) / 刷新重置(hard)"之间翻一下，
+// 写进 resetKindOverrides（人工定性，优先级最高），并原地把这一条换个样子。
+function toggleResetKind(ts) {
+  if (!isFinite(ts)) return;
+  const s = state.settings;
+  if (!s.resetKindOverrides || typeof s.resetKindOverrides !== 'object' || Array.isArray(s.resetKindOverrides)) {
+    s.resetKindOverrides = {};
+  }
+  // 先看这条现在显示成什么，再翻到另一种
+  const cur = collectResetEvents().find((e) => e.ts === ts);
+  const curType = cur ? cur.type : 'week';
+  const next = curType === 'hard' ? 'week' : 'hard';
+  s.resetKindOverrides[ts] = next;
+  s.lastModifiedAt = Date.now();
+  saveData();
+
+  // 原地切：换 item 的类(圆点/标签底色靠它)、换标签文字，圆点颜色平滑过渡 + 荡一圈光晕
+  const dot = document.querySelector(`#picker-list [data-reset-toggle="${ts}"]`);
+  const item = dot && dot.closest('.reset-tl-item');
+  if (item) {
+    item.classList.remove('is-week', 'is-hard');
+    item.classList.add('is-' + next);
+    const tag = item.querySelector('.reset-tl-tag');
+    const meta = RESET_TYPE_META[next];
+    if (tag && meta) tag.textContent = `${meta.icon} ${meta.label}`;
+    if (dot) {
+      dot.classList.remove('is-just-toggled');
+      void dot.offsetWidth; // 强制重排，让动画能连点重复触发
+      dot.classList.add('is-just-toggled');
+    }
+  }
 }
 
 function pickWindowFromList(idStr) {
@@ -3783,6 +3849,12 @@ function pickWeekFromList(value) {
 function bindPicker() {
   // 点标题打开
   document.addEventListener('click', (e) => {
+    // 重置时间线：点圆点在"自然重置 / 刷新重置"间切换（弹层不关）
+    const dot = e.target.closest('[data-reset-toggle]');
+    if (dot && $('#picker-mask').contains(dot)) {
+      toggleResetKind(parseInt(dot.dataset.resetToggle, 10));
+      return;
+    }
     const trigger = e.target.closest('[data-picker]');
     if (trigger) {
       pickerLastTrigger = trigger;
@@ -3809,9 +3881,13 @@ function bindPicker() {
     if (e.target === mask) closePicker();
   });
 
-  // ESC 关闭
+  // ESC 关闭 / 圆点聚焦时回车空格切换类型
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('#picker-mask').hidden) closePicker();
+    if (e.key === 'Escape' && !$('#picker-mask').hidden) { closePicker(); return; }
+    if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-reset-toggle]')) {
+      e.preventDefault();
+      toggleResetKind(parseInt(e.target.dataset.resetToggle, 10));
+    }
   });
 }
 

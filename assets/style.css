@@ -3624,6 +3624,14 @@ body.is-ready .input-card {
   padding: 10px 12px 6px;
 }
 
+/* 顶部小提示：告诉用户左侧圆点能点着切换重置类型 */
+.reset-tl-hint {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-mute);
+  padding: 0 2px 12px;
+}
+
 .reset-tl-item {
   display: flex;
   gap: 12px;
@@ -3665,9 +3673,50 @@ body.is-ready .input-card {
   border-radius: 50%;
   background: var(--c-weekly-deep);
   box-shadow: 0 0 0 3px var(--c-weekly-soft);
+  /* 切换类型时圆点底色 / 光环平滑过渡（in-place 改类才有效，首绘不触发） */
+  transition: background .28s ease, box-shadow .28s ease, transform .15s ease;
 }
 
-/* 官方临时重置：蜜桃橘，时间线上最该跳出来的就是它 */
+/* 可点击的圆点：手型光标 + 扩大命中区（圆点才 10px，太难点）+ 悬停轻微放大。
+   color 只用来给下面的扩散光晕(::before currentColor)取色，自然/刷新各一色 */
+.reset-tl-dot.is-toggleable {
+  cursor: pointer;
+  color: var(--c-weekly-deep);
+}
+.reset-tl-item.is-hard .reset-tl-dot.is-toggleable {
+  color: var(--c-5h-deep);
+}
+.reset-tl-dot.is-toggleable::after {
+  content: '';
+  position: absolute;
+  inset: -9px;            /* 命中区扩到约 28px 见方，手机也好戳 */
+  border-radius: 50%;
+}
+.reset-tl-dot.is-toggleable:hover {
+  transform: scale(1.28);
+}
+.reset-tl-dot.is-toggleable:focus-visible {
+  outline: 2px solid var(--c-rate-deep);
+  outline-offset: 3px;
+}
+/* 切换反馈：一圈同色光晕向外扩散淡出。只画在 ::before 上，不碰圆点自身的缩放——
+   这样 PC 上点完鼠标还悬停时，圆点稳稳停在 hover 的放大态，不会先缩回原大小再弹回去。 */
+.reset-tl-dot.is-just-toggled::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  animation: resetDotRipple .5s ease-out;
+}
+@keyframes resetDotRipple {
+  0%   { opacity: .5; transform: scale(1); }
+  100% { opacity: 0; transform: scale(2.6); }
+}
+
+/* 刷新重置（官方临时刷新额度）：蜜桃橘，时间线上最该跳出来的就是它 */
 .reset-tl-item.is-hard .reset-tl-dot {
   background: var(--c-5h-deep);
   box-shadow: 0 0 0 3px var(--c-5h-soft);
