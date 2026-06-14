@@ -1312,6 +1312,8 @@ body:not(.is-bars-armed) .ring-bar-fill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* 永不参与 flex 压缩：否则窄屏下中间标题挤占空间时，圆按钮会被横向压扁成竖鸭蛋形 */
+  flex-shrink: 0;
   font-size: 0; /* 吃掉任何残留字形，纯用 ::before 画箭头 */
   transition: background 0.2s var(--ease-soft), color 0.2s var(--ease-soft), transform 0.12s var(--ease-soft);
 }
@@ -3802,9 +3804,15 @@ html[data-theme="dark"] .reset-tl-item.is-rule .reset-tl-tag {
 
 /* 手机：挑选弹层贴边一些，列表项也紧凑一档 */
 @media (max-width: 640px) {
+  /* 窄屏放松中间标题的 220px 最小宽度，并收紧两侧间距：
+     把空间让出来，让 prev/next 圆按钮保持正圆，不再被挤压变形 */
+  .history-nav {
+    gap: 12px;
+  }
   /* 5h 历史标题：手机上把"进行中/已结束"胶囊整块顶到第二行，不再拆字换行 */
   .history-title {
     line-height: 1.35;
+    min-width: 0;
   }
   /* 第二行用 order 排成 [占位][状态胶囊][箭头]：
      左侧占位和右侧箭头等宽，胶囊就落在正中央，箭头自然靠右 */
