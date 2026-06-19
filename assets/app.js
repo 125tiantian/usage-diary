@@ -168,6 +168,32 @@ function deriveLegacyFields(settings) {
   }
 }
 
+// —— 数据指纹（轻量自查，不是安全哈希）——
+// 给整份记录算一个短指纹，用来在「启动 / 同步 / 导入备份」时核对数据有没有意外损坏或丢失。
+// 算法是 cyrb53 的变体：快、同步、零依赖，不依赖任何外部库；只用来发现意外变化，不防恶意篡改。
+function hashRecords(records) {
+  let h1 = 0xdeadbeef ^ records.length;
+  let h2 = 0x41c6ce57 ^ records.length;
+  for (const r of records) {
+    if (!r) continue;
+    const s = `${r.id}|${r.timestamp}|${r.fiveH}|${r.weekly}|${r.windowId}|${r.note || ''}`;
+    for (let i = 0; i < s.length; i++) {
+      const ch = s.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return ((h2 >>> 0).toString(16).padStart(8, '0')) + ((h1 >>> 0).toString(16).padStart(8, '0'));
+}
+
+// 数据指纹 = 记录条数 + 内容哈希。条数能一眼看出「少没少」，哈希能抓出「某条被悄悄改没改」。
+function dataFingerprint(records) {
+  const recs = records || state.records || [];
+  return { count: recs.length, hash: hashRecords(recs) };
+}
+
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -186,6 +212,7 @@ function saveData() {
       records: state.records,
       notes: state.notes,
       settings: state.settings,
+      fingerprint: dataFingerprint(state.records),
       version: 1,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -2070,6 +2097,7 @@ function exportJSON() {
     records: state.records,
     notes: state.notes,
     settings: state.settings,
+    fingerprint: dataFingerprint(state.records),
     exportedAt: new Date().toISOString(),
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -2088,6 +2116,15 @@ function importJSON(file) {
     try {
       const data = JSON.parse(e.target.result);
       if (Array.isArray(data.records)) {
+        // 备份文件自带指纹时，先验一遍：对不上说明文件损坏 / 被截断，拒绝导入，
+        // 避免拿坏档去覆盖本地好数据。老备份（没有指纹字段）跳过校验，照常导入，保持兼容。
+        if (data.fingerprint && data.fingerprint.hash) {
+          const fp = dataFingerprint(data.records);
+          if (fp.count !== data.fingerprint.count || fp.hash !== data.fingerprint.hash) {
+            showToast('备份文件可能已损坏，已取消导入');
+            return;
+          }
+        }
         state.records = data.records;
         state.notes = data.notes || {};
         state.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
@@ -2156,6 +2193,26 @@ const JSONBIN_BASE = 'https://api.jsonbin.io/v3';
 // 手动点「同步」按钮（handleSyncNow）和设置里的「立即拉取/推送」不受这个限制。
 const SYNC_THROTTLE_MS = 20 * 60 * 1000; // 20 分钟
 
+// 云端只同步最近这么多天的记录，避免单个 bin 撑破 jsonbin 的 100KB 上限。
+// 超出这个窗口的老记录只留在本地，靠「导出备份」长期保存；换设备时用备份文件导回。
+// 拉取时是和本地取并集合并（见 mergeSyncData），所以本机已有的老数据不会因为云端只剩近期而丢。
+const SYNC_RECENT_DAYS = 15;
+const SYNC_RECENT_MS = SYNC_RECENT_DAYS * 24 * 60 * 60 * 1000;
+// 兜底：即使最近 N 天一条没记（比如出门半个月没打卡），也至少同步最近这么多条，
+// 免得云端空到「换设备 / 清缓存后从云端啥近况都拉不到」。
+const SYNC_MIN_RECORDS = 20;
+
+// 挑出要同步到云端的记录：默认是最近 SYNC_RECENT_DAYS 天的，
+// 但记录很少或近期没记时，至少保留最近 SYNC_MIN_RECORDS 条兜底。
+function recordsForSync() {
+  const recs = state.records || [];
+  if (recs.length <= SYNC_MIN_RECORDS) return recs.slice();
+  const cutoff = Date.now() - SYNC_RECENT_MS;
+  const recent = recs.filter(r => r && (r.timestamp || r.id || 0) >= cutoff);
+  if (recent.length >= SYNC_MIN_RECORDS) return recent;
+  return recs.slice(-SYNC_MIN_RECORDS);
+}
+
 const syncState = {
   config: null,      // { masterKey, binId, lastSyncedAt }
   inFlight: false,   // 当前有没有请求在进行中
@@ -2223,7 +2280,7 @@ function syncHeaders(key) {
 // 从而把云端真正较新的 settings 覆盖掉。只有真改设置，版本号才前进。
 function buildSyncPayload(source) {
   return {
-    records: state.records,
+    records: recordsForSync(),
     notes: state.notes,
     settings: state.settings,
     syncMeta: {
@@ -2443,6 +2500,18 @@ async function syncPull(silent) {
       syncMeta: { lastModified: state.settings.lastModifiedAt || 0, source: 'local' },
     };
     const merged = mergeSyncData(remote, local);
+
+    // 同步安全网：合并是并集策略，本地已有的记录理应一条不少地保留下来。
+    // 万一合并结果里「本地原有的记录」凭空少了（哪天逻辑出 bug / 数据异常），就拦下这次同步、
+    // 不写回不保存，保护本地的老账——尤其云端只存近期、老数据只剩本地这一份的情况下更要兜住。
+    const mergedIds = new Set((merged.records || []).map(r => r && r.id));
+    const lost = (state.records || []).filter(r => r && r.id != null && !mergedIds.has(r.id));
+    if (lost.length > 0) {
+      setSyncBusy(false);
+      setSyncStatus('error', `同步已拦下：检测到本地 ${lost.length} 条记录会丢失`);
+      if (!silent) showToast('同步异常，已保护本地数据 (｡•́︿•̀｡)');
+      return false;
+    }
 
     state.records = merged.records;
     state.notes = merged.notes || {};
@@ -3895,6 +3964,9 @@ function bindPicker() {
 // 避免用户卡在透明的空白屏上。
 setTimeout(revealPage, 2000);
 
+// 启动时若发现本地数据指纹对不上，先记下来，等界面画完再弹提醒（见 init 末尾）
+let pendingIntegrityWarning = null;
+
 function init() {
   // 加载数据
   const data = loadData();
@@ -3902,6 +3974,16 @@ function init() {
     state.records = data.records || [];
     state.notes = data.notes || {};
     state.settings = { ...DEFAULT_SETTINGS, ...(data.settings || {}) };
+
+    // 数据指纹看门狗：在任何迁移动作之前，用「刚读出来的原始记录」和上次存档的指纹核对。
+    // 对不上说明本地存储在「写入之后又被外部弄坏了」，弹个醒目提示让用户用备份核对，但不阻断使用。
+    // 老用户首次升级时存档里没有 fingerprint 字段，自动跳过，存一次后就有了，兼容无碍。
+    if (data.fingerprint && data.fingerprint.hash) {
+      const now = dataFingerprint(state.records);
+      if (now.count !== data.fingerprint.count || now.hash !== data.fingerprint.hash) {
+        pendingIntegrityWarning = { stored: data.fingerprint.count, actual: now.count };
+      }
+    }
   }
   // 老数据可能没有 weeklyRules（旧格式 weekAnchor + preAnchor*），统一迁一遍。
   // 全新安装也走一次，让 weeklyRules 数组从 DEFAULT_SETTINGS 共享引用变成自家的副本。
@@ -3922,6 +4004,27 @@ function init() {
   bindEvents();
   renderAll();
   setupScrollReveal();
+
+  // 启动看门狗：若本地数据指纹对不上，等界面就绪后弹个醒目提醒，并提供一键去导入备份核对
+  if (pendingIntegrityWarning) {
+    const w = pendingIntegrityWarning;
+    pendingIntegrityWarning = null;
+    setTimeout(() => {
+      confirmDialog({
+        icon: '⚠️',
+        title: '本地数据好像被动过',
+        message: `上次存档记着 ${w.stored} 条记录，这次实际读到 ${w.actual} 条，指纹对不上，可能是本地存储损坏了。建议先别同步，导入一份最近的备份核对一下。`,
+        confirmText: '知道了',
+        cancelText: '去导入备份',
+        danger: true,
+      }).then((ok) => {
+        if (!ok) {
+          const inp = $('#import-file');
+          if (inp) inp.click();
+        }
+      });
+    }, 600);
+  }
 
   // 云同步：如果已配置且未被暂停，在页面渲染完后台静默拉取一次，
   // 有新数据就合并并重绘。失败不阻塞本地使用。
