@@ -1469,6 +1469,8 @@ function renderWindowDetail(windows) {
   if (windows.length === 0) {
     $('#history-title').textContent = '还没有窗口～';
     $('#window-summary').textContent = '记一笔就有数据啦 ✨';
+    $('#prev-window-btn').disabled = true;
+    $('#next-window-btn').disabled = true;
     if (windowChart) {
       windowChart.destroy();
       windowChart = null;
@@ -1481,6 +1483,12 @@ function renderWindowDetail(windows) {
   const idx = windows.findIndex(w => w.id === state.selectedHistoryWindowId);
   const w = idx >= 0 ? windows[idx] : windows[windows.length - 1];
   if (idx < 0) state.selectedHistoryWindowId = w.id;
+
+  // 左右箭头和 weekly 图保持一致：已经停在最早/最新窗口时对应方向置灰，
+  // 一眼就能看出"这边没有更多了"，不用点了没反应才知道
+  const curIdx = idx >= 0 ? idx : windows.length - 1;
+  $('#prev-window-btn').disabled = curIdx <= 0;
+  $('#next-window-btn').disabled = curIdx >= windows.length - 1;
 
   const startD = new Date(w.startTime);
   // 时间范围显示到实际终点：被硬重置截断的窗口只到闸门那一刻，不画满 5h
@@ -2112,7 +2120,7 @@ function exportJSON() {
 
 function importJSON(file) {
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const data = JSON.parse(e.target.result);
       if (Array.isArray(data.records)) {
@@ -2122,6 +2130,27 @@ function importJSON(file) {
           const fp = dataFingerprint(data.records);
           if (fp.count !== data.fingerprint.count || fp.hash !== data.fingerprint.hash) {
             showToast('备份文件可能已损坏，已取消导入');
+            return;
+          }
+        }
+        // 导入是"整包替换"，本地较新的记录会被备份盖掉——清空数据都有两道确认，
+        // 这里不能一声不吭。本地有数据时把两边条数和备份导出时间摆出来，让用户过目再动手；
+        // 本地本来就是空的（换新设备恢复）就不啰嗦，直接导。
+        if (state.records.length > 0) {
+          const when = data.exportedAt ? new Date(data.exportedAt) : null;
+          const whenStr = when && !isNaN(when.getTime())
+            ? `${when.getFullYear()}/${when.getMonth() + 1}/${when.getDate()} 导出`
+            : '导出时间未知';
+          const ok = await confirmDialog({
+            icon: '📂',
+            title: '用这份备份替换本地数据？',
+            message: `本地现在有 ${state.records.length} 条记录，备份里有 ${data.records.length} 条（${whenStr}）。\n导入会用备份完整替换本地的记录和设置哦。`,
+            confirmText: '替换',
+            cancelText: '再想想',
+            danger: data.records.length < state.records.length,
+          });
+          if (!ok) {
+            showToast('已取消导入');
             return;
           }
         }
@@ -2510,14 +2539,40 @@ async function syncPull(silent) {
       setSyncBusy(false);
       setSyncStatus('error', `同步已拦下：检测到本地 ${lost.length} 条记录会丢失`);
       if (!silent) showToast('同步异常，已保护本地数据 (｡•́︿•̀｡)');
-      return false;
+      return 'blocked';
     }
+
+    // 给"合并前"的数据拍个内容快照，合并完对比一下就知道这次拉取到底带没带来新东西。
+    // 绝大多数拉取其实什么都没变，这时候不该惊动页面——之前不管三七二十一都整页重绘，
+    // 图表被销毁重建、入场动画重播，手机上滚到半路突然"点全部重新飘上去"就是这么来的。
+    const changeSig = () =>
+      `${state.records.length}|${hashRecords(state.records)}|${JSON.stringify(state.settings)}|${JSON.stringify(state.notes)}`;
+    const beforeSig = changeSig();
+
+    // 记住合并前"最新窗口"是谁，等下合并完对比用（见下面选中跟随的注释）
+    const prevWindows = computeWindows(state.records);
+    const prevLatestId = prevWindows.length > 0 ? prevWindows[prevWindows.length - 1].id : null;
 
     state.records = merged.records;
     state.notes = merged.notes || {};
     state.settings = { ...DEFAULT_SETTINGS, ...(merged.settings || {}) };
     // 云端可能是老格式（没 weeklyRules）或来自另一台已经升级的设备，统一过一遍 migrate
     migrateSettings(state.settings);
+
+    const dataChanged = changeSig() !== beforeSig;
+
+    // 选中跟随：云端拉来了更新的 5h 窗口时，把历史视图的选中挪到最新窗口去。
+    // 之前的顽固问题就出在这：页面先按本地数据渲染、选中已经落在"本地最新窗口"上，
+    // 随后同步带来了更晚的窗口，但选中不是 null、也仍然指向一个存在的窗口，
+    // 于是 renderHistory 的"默认选最新"永远不会触发，得手动按 ▶ 才能看到。
+    // 只有用户本来就停在"拉取前的最新窗口"（或还没选中）时才跟过去——
+    // 正在翻看老窗口的话不打扰，保持原地。
+    const newWindows = computeWindows(state.records);
+    const newLatestId = newWindows.length > 0 ? newWindows[newWindows.length - 1].id : null;
+    if (newLatestId != null && newLatestId !== prevLatestId &&
+        (state.selectedHistoryWindowId === null || state.selectedHistoryWindowId === prevLatestId)) {
+      state.selectedHistoryWindowId = newLatestId;
+    }
 
     // 云端数据合并进来后，输入卡的 draft 状态（上次值、当前窗口 ID 等）
     // 是基于"旧 records"算的，已经过时了。重算 draft，让 renderAll() 看到最新状态。
@@ -2534,12 +2589,16 @@ async function syncPull(silent) {
       if (windowChanged) resetDraft();
     }
 
-    saveData();
+    // 没变化就不写盘（内容一样，写了也是白写）；lastSyncedAt 照常更新，节流要靠它
+    if (dataChanged) saveData();
     saveSyncConfig({ ...c, lastSyncedAt: Date.now() });
 
     setSyncBusy(false);
     setSyncStatus('ok', '已同步');
-    return true;
+    // 告诉调用方这次拉取的结果：'changed' 才需要重绘页面，
+    // 'unchanged' 别动任何东西（不然图表入场动画会无缘无故重播），
+    // 'blocked' 是安全网拦下了（上面已提前 return）。
+    return dataChanged ? 'changed' : 'unchanged';
   } catch (e) {
     setSyncBusy(false);
     setSyncStatus('error', `拉取失败：${e.message}`);
@@ -2652,9 +2711,9 @@ async function handleSyncNow() {
     return;
   }
   try {
-    await syncPull(false);
-    renderAll();
-    showToast('已同步 ✨');
+    const result = await syncPull(false);
+    if (result === 'changed') renderAll();
+    if (result !== 'blocked') showToast(result === 'changed' ? '已同步 ✨' : '已是最新 ✨');
   } catch (e) {
     // 错误状态已在 syncPull 里通过 setSyncStatus 显示
   }
@@ -2676,9 +2735,9 @@ async function handleSyncPullBtn() {
     saveSyncConfig({ masterKey: key, binId, lastSyncedAt: (c && c.lastSyncedAt) || 0 });
   }
   try {
-    await syncPull(false);
-    renderAll();
-    showToast('已拉取最新 ✨');
+    const result = await syncPull(false);
+    if (result === 'changed') renderAll();
+    if (result !== 'blocked') showToast(result === 'changed' ? '已拉取最新 ✨' : '已是最新 ✨');
   } catch (e) {}
 }
 
@@ -2929,13 +2988,18 @@ const chartEnterAnimations = new WeakMap();
 //   直接用真实动画，行为和以前一样
 function createChartWithEnterAnim(ctx, config, enterAnimOpts) {
   const enterAnim = chartAnimation(enterAnimOpts);
+  // 只冻结"所在卡片还没滚进过视口"的图。卡片已经 reveal 过的话，
+  // 观察器早就解除观察了，这时再冻结就永远没人来解冻——
+  // 之前后台同步带着新数据重绘时会撞上这一条：图表僵在起点、点全趴在底线上。
+  const host = ctx && ctx.canvas && ctx.canvas.closest ? ctx.canvas.closest('.scroll-reveal') : null;
+  const freeze = chartsInInitialState && (!host || !host.classList.contains('is-revealed'));
   config.options = {
     ...config.options,
-    animation: chartsInInitialState ? false : enterAnim,
+    animation: freeze ? false : enterAnim,
   };
   const chart = new Chart(ctx, config);
   chartEnterAnimations.set(chart, enterAnim);
-  if (chartsInInitialState) {
+  if (freeze) {
     // 立即停在起点，避免用户滚到第二屏时看到"从最终态跳回起点再长出来"的闪烁
     chart.reset();
   }
@@ -4033,8 +4097,8 @@ function init() {
   if (isSyncConfigured() && !isSyncPaused() && !isSyncThrottled()) {
     setTimeout(() => {
       syncPull(true)
-        .then(() => {
-          renderAll();
+        .then((result) => {
+          if (result === 'changed') renderAll();
         })
         .catch(() => {
           // 错误状态已经在 setSyncStatus 里了，用户打开设置面板就能看到
@@ -4054,14 +4118,21 @@ function init() {
     maybeRefreshDraft();
   }, 60 * 1000);
 
-  // 从后台切回前台（比如用户把 PWA 切到后台刷别的，再切回来）时立刻同步一次，
-  // 避免等最多 60 秒才赶上时间推进。document.visibilityState === 'visible'
-  // 意味着用户正在看这个页面，这时候做一次"赶上进度"的更新是合理的。
+  // 从后台切回前台（比如用户把 PWA 切到后台刷别的，再切回来）时立刻赶上进度：
+  // 本地的倒计时/状态卡先刷新，然后——和打开应用时一样——做一次云端静默拉取。
+  // 手机 PWA 常驻内存，切回来不会重新走 init 里的启动拉取，之前这里只刷本地显示，
+  // 导致"另一台设备记了新窗口、这台切回来永远看不到"。拉取同样走 20 分钟节流，
+  // 不会每次切换都打远端；拉到新数据就整页重绘（含 5h 历史选中跟随）。
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
       renderTopbar();
       renderStatusCards();
       maybeRefreshDraft();
+      if (isSyncConfigured() && !isSyncPaused() && !isSyncThrottled()) {
+        syncPull(true)
+          .then((result) => { if (result === 'changed') renderAll(); })
+          .catch(() => {});
+      }
     }
   });
 
