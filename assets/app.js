@@ -367,6 +367,15 @@ function formatRemainingUntilReset(ms) {
   return `还剩 ${days} 天`;
 }
 
+// 把毫秒时长格式化成 "2h 35m"，口径对齐官方 usage 页的 "Resets in x hr xx min"，
+// 方便肉眼比对两边的剩余时间来校准 5h 窗口起点
+function formatHm(ms) {
+  const totalMin = Math.max(0, Math.floor(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}h ${m}m`;
+}
+
 // 找"本周"（从上次 weekly 重置到下次重置之间）里最后一笔记录。
 // 为什么要这个：weekly 的显示值必须只看本周的数据，
 // 不然新一周刚开始、还没记录时，用"全局最后一笔"就会残留上一周的 82%、
@@ -461,7 +470,11 @@ function computeWindows(records) {
   return Array.from(map.values()).sort((a, b) => a.startTime - b.startTime);
 }
 
-// 算某个窗口起点能挪到的合法范围 [minStart, maxStart]，十分钟对齐
+// 算某个窗口起点能挪到的合法范围 [minStart, maxStart]，十分钟对齐。
+// 原则：只被"硬证据"约束——自家和邻居的真实记录、硬重置闸门。
+// 邻居窗口"名义上的 5h 领地"不作数：窗口起点本来就是按第一笔记录猜的，
+// 名义领地可能比真实窗口长（历史数据、多端合并甚至会互相重叠），
+// 拿它当墙会把明明合法的移动挡在外面。
 function getWindowAdjustRange(target, allWindows) {
   const idx = allWindows.findIndex((w) => w.id === target.id);
   const prevWin = idx > 0 ? allWindows[idx - 1] : null;
@@ -469,22 +482,38 @@ function getWindowAdjustRange(target, allWindows) {
   const recs = target.records;
   const firstTs = recs[0].timestamp;
   const lastTs = recs[recs.length - 1].timestamp;
-
-  // 起点下界：自家最晚一笔记录留得住 + 不能侵前一个窗口的地盘
-  // （前一个窗口被硬重置截断时，它的地盘只到闸门为止，不占满整个 5h）
-  let minStart = lastTs - FIVE_HOURS_MS + 1;
-  if (prevWin) minStart = Math.max(minStart, prevWin.effectiveEnd != null ? prevWin.effectiveEnd : prevWin.endTime);
-  // 也不能挪到自家记录之前最近一道硬重置闸门的前面，不然窗口会被闸门腰斩
   const gates = state.settings && Array.isArray(state.settings.hardResets) ? state.settings.hardResets : [];
+
+  // 起点下界：自家最晚一笔记录留得住
+  let minStart = lastTs - FIVE_HOURS_MS + 1;
+  // 不能吞掉前一个窗口的记录：以它"最后一笔记录"为界，而不是它名义领地的尽头
+  if (prevWin && prevWin.records.length > 0) {
+    const prevLastTs = prevWin.records[prevWin.records.length - 1].timestamp;
+    minStart = Math.max(minStart, prevLastTs + 1);
+  }
+  // 也不能挪到自家记录之前最近一道硬重置闸门的前面，不然窗口会被闸门腰斩
   for (const h of gates) {
     if (h <= firstTs && h > minStart) minStart = h;
   }
   minStart = ceilToStep(minStart);
 
-  // 起点上界：自家最早一笔记录留得住 + 不能侵后一个窗口的地盘
+  // 起点上界：自家最早一笔记录留得住
   let maxStart = firstTs;
-  if (nextWin) maxStart = Math.min(maxStart, nextWin.startTime - FIVE_HOURS_MS);
+  // 后一个窗口的净空约束只在"这个窗口真可能烧满 5h 顶到它"时才需要：
+  // 若自家记录之后、下个窗口开始之前有一道硬重置闸门，那不管挪到哪
+  // 都会在闸门被截断，永远碰不到下家，这条约束就该跳过
+  if (nextWin) {
+    const gateBetween = gates.find((h) => h > firstTs && h <= nextWin.startTime);
+    if (gateBetween == null) {
+      maxStart = Math.min(maxStart, nextWin.startTime - FIVE_HOURS_MS);
+    }
+  }
   maxStart = floorToStep(maxStart);
+
+  // 保底：窗口现在的起点本身永远合法（它就摆在那），范围至少要包含它——
+  // 无论数据多奇怪都不再出现"连原地都不合法"的死锁
+  minStart = Math.min(minStart, target.startTime);
+  maxStart = Math.max(maxStart, target.startTime);
 
   return { minStart, maxStart };
 }
@@ -508,14 +537,19 @@ function median(arr) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-// 扫描所有记录，找出每次 weekly 跳格事件，算出每一格的 5h 成本
+// 扫描所有记录，找出每次 weekly 跳格事件，算出每一格的 5h 成本。
+// 成本 = 分段内 5h 读数的所有"正增量"之和：
+//   - 跨 5h 桶时，新桶的第一笔从 0 起算（那个值本身就是新桶已烧掉的量）；
+//   - 同一个桶里读数掉头向下，视作"隐形翻新"（本地窗口没对齐、官方其实已经刷新过），
+//     按"从 0 重新烧到当前值"计，而不是把负数灌进成本（以前会算成负、整个样本被扔掉）。
+// 这两种情况都跨过了"桶缝"——上一桶最后一笔之后、翻新之前烧掉的量没人记录，
+// 这种样本天然偏低，标记 clean:false；展示端优先采用没跨缝的干净样本（见 preferCleanSamples）。
 function computeRateSamples(records) {
   if (records.length < 2) return [];
 
   const sorted = records.slice().sort((a, b) => a.timestamp - b.timestamp);
   const samples = [];
 
-  let segStart = sorted[0];
   let segStartIdx = 0;
 
   for (let i = 1; i < sorted.length; i++) {
@@ -525,13 +559,11 @@ function computeRateSamples(records) {
     // 跨过周界（含硬重置）一律重开分段：哪怕新周第一笔的 weekly 数值没降下来
     // （比如上周收尾本来就很低），也不能让旧周期的 5h 消耗串进新周期的格子里
     if (getWeekStart(cur.timestamp, state.settings) !== getWeekStart(prev.timestamp, state.settings)) {
-      segStart = cur;
       segStartIdx = i;
       continue;
     }
 
     if (cur.weekly < prev.weekly) {
-      segStart = cur;
       segStartIdx = i;
       continue;
     }
@@ -539,53 +571,59 @@ function computeRateSamples(records) {
     const jump = cur.weekly - prev.weekly;
     if (jump <= 0) continue;
 
-    let cost;
-    if (cur.windowId === segStart.windowId) {
-      cost = cur.fiveH - segStart.fiveH;
-    } else {
-      // 跨桶刷新（可能多次），按窗口分段累加
-      cost = 0;
-      let currentWid = segStart.windowId;
-      let segBase = segStart.fiveH;
-      let lastIn = segStart.fiveH;
-      for (let j = segStartIdx + 1; j <= i; j++) {
-        if (sorted[j].windowId !== currentWid) {
-          cost += lastIn - segBase;
-          currentWid = sorted[j].windowId;
-          segBase = 0;
-        }
-        lastIn = sorted[j].fiveH;
+    let cost = 0;
+    let crossedSeam = false;
+    for (let j = segStartIdx + 1; j <= i; j++) {
+      const a = sorted[j - 1];
+      const b = sorted[j];
+      if (b.windowId !== a.windowId) {
+        cost += b.fiveH;
+        crossedSeam = true;
+      } else if (b.fiveH >= a.fiveH) {
+        cost += b.fiveH - a.fiveH;
+      } else {
+        cost += b.fiveH;
+        crossedSeam = true;
       }
-      cost += lastIn - segBase;
     }
 
     if (jump > 1) cost = cost / jump;
 
     if (cost > 0) {
-      samples.push({ cost, timestamp: cur.timestamp });
+      samples.push({ cost, timestamp: cur.timestamp, clean: !crossedSeam });
     }
 
-    segStart = cur;
     segStartIdx = i;
   }
 
   return samples;
 }
 
-// 当前汇率 = 最近 3 格的中位数
+// 优先用"干净样本"——整段消耗都被同一个 5h 桶完整记到的格子成本。
+// 跨桶缝的样本把缝里没记录的消耗漏掉了，数值天然偏低，会把中位数往下拖
+// （这就是"当天真实约 10.7、卡片却显示 7.5"的来源）。
+// 干净样本攒够 minCount 个就只用它们，不够时才拿跨缝样本凑数（有总比没有强）。
+function preferCleanSamples(samples, minCount) {
+  const clean = samples.filter((s) => s.clean);
+  return clean.length >= minCount ? clean : samples;
+}
+
+// 当前汇率 = 最近 3 格的中位数（干净样本够 3 个就只看干净的）
 function computeCurrentRate(samples) {
-  if (samples.length < 3) return null;
-  const recent = samples.slice(-3).map(s => s.cost);
+  const pool = preferCleanSamples(samples, 3);
+  if (pool.length < 3) return null;
+  const recent = pool.slice(-3).map(s => s.cost);
   return median(recent);
 }
 
-// 本周汇率 = 本周所有格的中位数
+// 本周汇率 = 本周所有格的中位数（干净样本够 2 个就只看干净的）
 function computeWeeklyRate(samples, settings) {
   const weekStart = getWeekStart(Date.now(), settings);
   const weekEnd = getWeekEnd(weekStart, settings);
   const weekSamples = samples.filter(s => s.timestamp >= weekStart && s.timestamp < weekEnd);
   if (weekSamples.length === 0) return null;
-  return median(weekSamples.map(s => s.cost));
+  const pool = preferCleanSamples(weekSamples, 2);
+  return median(pool.map(s => s.cost));
 }
 
 // --- 以下高峰相关函数保留但不再被调用（高峰机制暂停）---
@@ -666,16 +704,18 @@ function maybeRefreshDraft() {
     state.draft5h === state.draftPrev5h &&
     state.draftWeekly === state.draftPrevWeekly;
 
-  // 即使用户正在编辑，也要检查窗口是否已经过期。
-  // 如果旧窗口已经结束了，那用户正在编辑的值是针对一个已经不存在的窗口，
-  // 继续显示旧窗口的标签会误导——必须强制刷新。
-  // 只有"窗口没变 + 用户在编辑"的组合才跳过。
+  // 用户正在编辑时：草稿所属的窗口还活着就完全不打扰。
+  // 窗口真的过期了才继续往下——但用户输入到一半的数字绝不能清
+  // （那是从官方页面抄来的读数，不因这边换了个窗口就作废），
+  // 下面只刷新窗口归属 / 标签 / 上次值这些元信息，数字原样带过去。
+  // 注意"下一笔会开新窗口"的状态：最后一条记录的窗口永远是"已过期"，
+  // 以前这里每分钟 / 每次切回前台都会误判成"要强刷"，把输入清空——
+  // 就是"先输 5h、再输 weekly 时 5h 突然归零"的元凶。
   if (!untouched) {
     const lastRecord = state.records[state.records.length - 1];
     const now = Date.now();
     const windowStillAlive = lastRecord && isWindowAliveAt(lastRecord.windowId, now, state.settings);
     if (windowStillAlive) return;  // 同一个窗口内，保护用户的编辑
-    // 窗口已过期 → 不管用户编辑了什么，往下走强制刷新
   }
 
   // 快照当前 draft 相关字段，准备做前后对比
@@ -686,8 +726,16 @@ function maybeRefreshDraft() {
     isNewWindow: state.isNewWindow,
     isNewWeek: state.isNewWeek,
   };
+  const keep5h = state.draft5h;
+  const keepWeekly = state.draftWeekly;
 
   resetDraft();
+
+  // 编辑中的数字原样恢复（没在编辑时 keep 值本来就等于重算后的预填值，恢复也无害）
+  if (!untouched) {
+    state.draft5h = keep5h;
+    state.draftWeekly = keepWeekly;
+  }
 
   // 如果 resetDraft 后任何一个关键字段变了，说明时间推进产生了"可见差异"，
   // 触发输入卡重绘，让窗口标签、预填值、🌱 新一周等都跟上当前时间
@@ -799,10 +847,7 @@ function renderStatusCards() {
     $('#status-5h-range').textContent = `${hm(startD)} - ${hm(endD)}`;
 
     const remainingMs = currentWindow.endTime - Date.now();
-    const remainingMin = Math.max(0, Math.floor(remainingMs / 60000));
-    const h = Math.floor(remainingMin / 60);
-    const m = remainingMin % 60;
-    $('#status-5h-countdown').textContent = `还剩 ${h}h ${m}m ⏱`;
+    $('#status-5h-countdown').textContent = `还剩 ${formatHm(remainingMs)} ⏱`;
   } else {
     $('#status-5h-num').textContent = '0';
     $('#status-5h-bar').style.width = '0%';
@@ -1105,13 +1150,14 @@ function renderRateTrendChart() {
 
   const samples = computeRateSamples(state.records);
 
-  // 按天分组格成本样本（key 带年份防跨年冲突），每天取中位数
+  // 按天分组格成本样本（key 带年份防跨年冲突），每天取中位数。
+  // 存整个样本对象而不是裸 cost，方便每天先做"干净样本优先"的挑选
   const byDay = new Map();
   for (const s of samples) {
     const d = new Date(s.timestamp);
     const dayKey = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
     if (!byDay.has(dayKey)) byDay.set(dayKey, []);
-    byDay.get(dayKey).push(s.cost);
+    byDay.get(dayKey).push(s);
   }
 
   // 始终显示最近 5 天（含今天），没数据的天留空
@@ -1125,9 +1171,10 @@ function renderRateTrendChart() {
     lookupKeys.push(`${dt.getFullYear()}-${dt.getMonth() + 1}-${dt.getDate()}`);
   }
   const data = lookupKeys.map(k => {
-    const costs = byDay.get(k);
-    if (!costs || costs.length === 0) return null;
-    return +median(costs).toFixed(1);
+    const daySamples = byDay.get(k);
+    if (!daySamples || daySamples.length === 0) return null;
+    const pool = preferCleanSamples(daySamples, 2);
+    return +median(pool.map(s => s.cost)).toFixed(1);
   });
 
   const ctx = $('#rate-chart').getContext('2d');
@@ -1503,12 +1550,8 @@ function renderWindowDetail(windows) {
     `<i class="history-title-break" aria-hidden="true"></i>` +
     `<span class="history-title-status${isActive ? ' is-live' : ''}">${statusText}</span>`;
 
-  // 总结
-  const finalVal = w.lastValue;
-  const recordCount = w.records.length;
-  $('#window-summary').textContent = isActive
-    ? `已烧到 ${finalVal}%，共 ${recordCount} 条记录`
-    : `最终烧到 ${finalVal}%，共 ${recordCount} 条记录`;
+  // 总结（进行中的窗口带"还剩 xh xxm"，见 renderWindowSummary）
+  renderWindowSummary(w);
 
   // 备注区：默认显示最新一条 + 可展开看全部
   renderNotesArea(w);
@@ -1608,6 +1651,56 @@ function renderWindowDetail(windows) {
       },
     },
   }, { duration: 1300, stagger: 90, pointCount: points.length });
+}
+
+// 窗口详情下面那行小结。进行中的窗口带上"还剩 xh xxm"——
+// 和官方 usage 页的 "Resets in x hr xx min" 对一眼，就知道这边的窗口对没对齐，
+// 不齐的话直接点"调起点"，边调边看下面的实时预览。
+function renderWindowSummary(w) {
+  const isActive = isWindowAliveAt(w.startTime, Date.now(), state.settings);
+  let text = isActive
+    ? `已烧到 ${w.lastValue}%，共 ${w.records.length} 条记录`
+    : `最终烧到 ${w.lastValue}%，共 ${w.records.length} 条记录`;
+  if (isActive) {
+    text += ` · 还剩 ${formatHm(w.effectiveEnd - Date.now())} ⏱`;
+  }
+  $('#window-summary').textContent = text;
+}
+
+// 每分钟刷新一次"进行中窗口的剩余时间"这两处小字（历史卡小结 + 调起点实时预览）。
+// 只改文字、不动图表，不会打断任何动画。
+function refreshWindowRemaining() {
+  if (state.records.length === 0) return;
+  const windows = computeWindows(state.records);
+  const w = windows.find((x) => x.id === state.selectedHistoryWindowId);
+  if (w) renderWindowSummary(w);
+  if (state.adjustOpen) updateAdjustRemaining();
+}
+
+// 调起点面板里的实时预览：按现在输入框里的起点，窗口几点结束、此刻还剩多久。
+// 手里有官方的 "Resets in x hr xx min" 时，把这里调到和官方一致，起点就对齐了。
+function updateAdjustRemaining() {
+  const el = $('#adjust-remaining');
+  if (!el) return;
+  const dateStr = $('#adjust-date').value;
+  const hour = parseInt($('#adjust-hour').value, 10);
+  const minute = parseInt($('#adjust-min').value, 10);
+  const parts = dateStr ? dateStr.split('-').map((s) => parseInt(s, 10)) : [];
+  if (parts.length !== 3 || parts.some(isNaN) || isNaN(hour) || isNaN(minute)) {
+    el.hidden = true;
+    return;
+  }
+  const start = new Date(parts[0], parts[1] - 1, parts[2], hour, minute, 0, 0).getTime();
+  const end = start + FIVE_HOURS_MS;
+  const now = Date.now();
+  el.hidden = false;
+  if (end > now && start <= now) {
+    el.textContent = `⏱ 这个起点 → ${hm(new Date(end))} 结束 · 现在还剩 ${formatHm(end - now)}`;
+  } else if (end <= now) {
+    el.textContent = `⏱ 这个起点 → ${hm(new Date(end))} 结束（已经走完啦）`;
+  } else {
+    el.textContent = `⏱ 这个起点 → ${hm(new Date(end))} 结束（还没开始）`;
+  }
 }
 
 // 渲染备注区：默认只显示这个窗口里"最新一条带备注"的记录，
@@ -1710,12 +1803,15 @@ function renderAdjustPanel(window, windows) {
   const range = getWindowAdjustRange(window, windows);
   panel.classList.add('is-open');
 
-  // 整个范围被夹死、连原起点都没法保持的情况几乎不会发生，但兜底处理
+  // 整个范围被夹死、连原起点都没法保持的情况在新算法下不会再出现
+  // （范围保底包含当前起点），这里纯粹留个防御性兜底
   if (range.minStart > range.maxStart) {
     hint.textContent = '这个窗口被前后夹得严严实实，挪不动 (｡•́︿•̀｡)';
     dateInput.disabled = true;
     hourInput.disabled = true;
     confirmBtn.disabled = true;
+    const remainEl = $('#adjust-remaining');
+    if (remainEl) remainEl.hidden = true;
     return;
   }
 
@@ -1726,6 +1822,7 @@ function renderAdjustPanel(window, windows) {
   const minD = new Date(range.minStart);
   const maxD = new Date(range.maxStart);
   hint.textContent = `这个窗口可以挪到 ${formatHintTime(minD)} 到 ${formatHintTime(maxD)} 之间`;
+  updateAdjustRemaining();
 
   // min/max 边界每次 render 都更新（反映相邻窗口的最新状态），但不在这里写 value——
   // 否则 renderAll 触发时（切主题/保存/同步）会把用户正在编辑的输入吞掉
@@ -1749,6 +1846,7 @@ function seedAdjustInputs(window) {
   $('#adjust-hour').value = curD.getHours();
   // 分钟抹到十分钟刻度，和窗口起点的取整粒度一致
   $('#adjust-min').value = Math.floor(curD.getMinutes() / 10) * 10;
+  updateAdjustRemaining();
 }
 
 function toggleAdjustPanel() {
@@ -2586,7 +2684,15 @@ async function syncPull(silent) {
     } else {
       const lastRecord = state.records[state.records.length - 1];
       const windowChanged = !lastRecord || lastRecord.windowId !== state.draftWindowId;
-      if (windowChanged) resetDraft();
+      if (windowChanged) {
+        // 和 maybeRefreshDraft 同一个修复：窗口归属过时就重算归属，
+        // 但用户输入到一半的数字原样保留，不能被一次后台拉取冲掉
+        const keep5h = state.draft5h;
+        const keepWeekly = state.draftWeekly;
+        resetDraft();
+        state.draft5h = keep5h;
+        state.draftWeekly = keepWeekly;
+      }
     }
 
     // 没变化就不写盘（内容一样，写了也是白写）；lastSyncedAt 照常更新，节流要靠它
@@ -3272,6 +3378,14 @@ function bindEvents() {
   $('#adjust-toggle-btn').addEventListener('click', toggleAdjustPanel);
   $('#adjust-cancel-btn').addEventListener('click', cancelAdjustPanel);
   $('#adjust-confirm-btn').addEventListener('click', confirmAdjustWindow);
+  // 调起点的三个输入框一变，实时预览"窗口几点结束、还剩多久"就跟着变
+  // （± 步进按钮内部会派发 input/change 事件，所以点按钮也能触发）
+  ['#adjust-date', '#adjust-hour', '#adjust-min'].forEach((sel) => {
+    const inp = $(sel);
+    if (!inp) return;
+    inp.addEventListener('input', updateAdjustRemaining);
+    inp.addEventListener('change', updateAdjustRemaining);
+  });
 
   // Weekly 周导航 —— 同上
   $('#prev-week-btn').addEventListener('click', () => {
@@ -4116,6 +4230,7 @@ function init() {
     renderTopbar();
     renderStatusCards();
     maybeRefreshDraft();
+    refreshWindowRemaining();
   }, 60 * 1000);
 
   // 从后台切回前台（比如用户把 PWA 切到后台刷别的，再切回来）时立刻赶上进度：
@@ -4128,6 +4243,7 @@ function init() {
       renderTopbar();
       renderStatusCards();
       maybeRefreshDraft();
+      refreshWindowRemaining();
       if (isSyncConfigured() && !isSyncPaused() && !isSyncThrottled()) {
         syncPull(true)
           .then((result) => { if (result === 'changed') renderAll(); })

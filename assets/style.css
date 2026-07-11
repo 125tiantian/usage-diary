@@ -1457,6 +1457,15 @@ body:not(.is-bars-armed) .ring-bar-fill {
   text-align: center;
 }
 
+/* 调起点面板里的实时预览小字："这个起点 → 几点结束 · 现在还剩多久" */
+.adjust-remaining {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
 .adjust-actions {
   display: flex;
   gap: 10px;
