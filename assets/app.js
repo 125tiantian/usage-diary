@@ -1727,7 +1727,7 @@ function renderNotesArea(window) {
 
   // 默认显示"最新一条"——也就是这个窗口里最后一条带备注的记录
   if (notedRecords.length === 0) {
-    latestEl.textContent = '这个窗口里还没写过备注～hover 折线图上的点也没什么可看的 (｡•̀ᴗ-)';
+    latestEl.textContent = '这个窗口还没有备注 (｡•̀ᴗ-)';
     latestEl.classList.add('is-empty');
     expandBtn.hidden = true;
     listEl.hidden = true;
