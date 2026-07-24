@@ -1479,7 +1479,7 @@ function renderWeeklyChart(mode = 'update') {
   });
 
   // 当 .middle-row 已经可见（scroll-reveal 已触发）但 chartsInInitialState 仍为 true
-  // （页面上还有别的 scroll-reveal 卡没露出来），此时新建的 chart 以 animation:false + reset()
+  // （下方 history-card 还没露出来），此时新建的 chart 以 animation:false + reset()
   // 的冻结状态创建，却不会再被 observer 触发入场动画。
   // 手动补一次，避免图表永远停在"所有点都在底部"的 reset 状态，
   // 以及随之而来的"触摸一下所有点跳到底部"问题。

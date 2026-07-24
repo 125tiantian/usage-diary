@@ -2431,14 +2431,9 @@ body.is-ready .input-card {
     padding: 0 12px clamp(24px, 4vh, 40px);
   }
 
-  /* 只让第二屏堆叠。
-     堆叠后按使用频率排：周曲线在前、汇率在后
-     （5h 历史卡在 DOM 里本来就在这行前面，不用管）。 */
+  /* 只让第二屏堆叠 */
   .middle-row {
     grid-template-columns: 1fr;
-  }
-  .middle-row .weekly-card {
-    order: -1;
   }
 
   /* —— 第一屏容器 / 顶栏 —— */
