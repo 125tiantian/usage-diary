@@ -57,7 +57,7 @@
   <!-- Chart.js (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <link rel="stylesheet" href="assets/style.css?v=2.76">
+  <link rel="stylesheet" href="assets/style.css?v=2.77">
 </head>
 <body>
 
@@ -228,17 +228,16 @@
         <div class="adjust-panel" id="adjust-panel">
           <div class="adjust-panel-inner">
             <div class="adjust-hint" id="adjust-hint">—</div>
+            <!-- 没有日期框：调起点永远在 5h 内挪，用不上日历。
+                 「时」直接在时间轴上走，跨零点自动落到前/后一天；
+                 「分」只在当前小时里 0↔50 环绕，不进位。落在哪天看下面的预览行。 -->
             <div class="adjust-inputs">
-              <label class="adjust-label">
-                <span>日期</span>
-                <input type="date" id="adjust-date">
-              </label>
               <label class="adjust-label" for="adjust-hour">
                 <span>时</span>
                 <span class="hour-stepper" data-hour-stepper>
-                  <button type="button" class="hour-stepper-btn" data-hour-step="-1" aria-label="减一小时">−</button>
+                  <button type="button" class="hour-stepper-btn" data-hour-step="-1" aria-label="往前一小时">−</button>
                   <input type="number" id="adjust-hour" min="0" max="23" inputmode="numeric">
-                  <button type="button" class="hour-stepper-btn" data-hour-step="1" aria-label="加一小时">+</button>
+                  <button type="button" class="hour-stepper-btn" data-hour-step="1" aria-label="往后一小时">+</button>
                 </span>
               </label>
               <label class="adjust-label" for="adjust-min">
@@ -570,7 +569,7 @@
         <div class="settings-footer">
           额度小日记 · 缓解 Claude 额度焦虑的小手账<br>
           数据存在你的浏览器本地，配了云同步会自动备份到 jsonbin.io
-          <div class="settings-version">v2.76</div>
+          <div class="settings-version">v2.77</div>
         </div>
 
       </div>
@@ -592,7 +591,7 @@
     </div>
   </div>
 
-  <script src="assets/app.js?v=2.76"></script>
+  <script src="assets/app.js?v=2.77"></script>
 </body>
 </html>
 <!-- Triggered workflow run on  -->

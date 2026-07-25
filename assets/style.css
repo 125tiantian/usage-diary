@@ -1423,6 +1423,29 @@ body:not(.is-bars-armed) .ring-bar-fill {
   font-weight: 600;
   margin-bottom: 10px;
   text-align: center;
+  transition: transform 0.2s ease;
+}
+
+/* 调到可调范围的边界、再按就不动了：步进器抖一下、范围提示同时闪一下，
+   告诉你"到头了"而不是"按坏了" */
+.adjust-inputs .hour-stepper.is-bumped {
+  animation: adjustBump 0.36s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+.adjust-hint.is-bumped {
+  animation: adjustHintFlash 0.6s ease;
+}
+
+@keyframes adjustBump {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  45% { transform: translateX(4px); }
+  70% { transform: translateX(-2px); }
+}
+
+@keyframes adjustHintFlash {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  35% { transform: scale(1.05); opacity: 0.75; }
 }
 
 .adjust-inputs {
@@ -1441,7 +1464,6 @@ body:not(.is-bars-armed) .ring-bar-fill {
   color: var(--text-secondary);
 }
 
-.adjust-label input[type="date"],
 .adjust-label input[type="number"] {
   font-size: 13px;
   padding: 6px 8px;
