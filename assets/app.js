@@ -654,6 +654,7 @@ const state = {
   selectedHistoryWindowId: null,
   selectedWeekStart: null,       // null = 当前周
   adjustOpen: false,             // 历史卡里"调起点"面板是否展开
+  adjustDraftTs: null,           // 调起点面板里当前选中的起点（时间戳，仅面板展开时有意义）
 };
 
 // 根据现状重置 draft（每次保存后/页面初始化时调用）
@@ -1677,29 +1678,49 @@ function refreshWindowRemaining() {
   if (state.adjustOpen) updateAdjustRemaining();
 }
 
-// 调起点面板里的实时预览：按现在输入框里的起点，窗口几点结束、此刻还剩多久。
+// 相对今天的天数差：0=今天、-1=昨天、+1=明天（按日历天算，不是 24 小时）
+function dayDiffFromToday(ts) {
+  const a = new Date(ts);
+  a.setHours(0, 0, 0, 0);
+  const b = new Date();
+  b.setHours(0, 0, 0, 0);
+  return Math.round((a.getTime() - b.getTime()) / 86400000);
+}
+
+// 日期框删掉之后，"这个起点到底在哪天"全靠文案交代，所以给时间加个天前缀
+function dayPrefix(ts) {
+  const diff = dayDiffFromToday(ts);
+  if (diff === 0) return '';
+  if (diff === -1) return '昨天 ';
+  if (diff === -2) return '前天 ';
+  if (diff === 1) return '明天 ';
+  const d = new Date(ts);
+  const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+  return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} `;
+}
+
+// 调起点面板里的实时预览：按当前草稿起点，窗口几点开始/结束、此刻还剩多久。
 // 手里有官方的 "Resets in x hr xx min" 时，把这里调到和官方一致，起点就对齐了。
 function updateAdjustRemaining() {
   const el = $('#adjust-remaining');
   if (!el) return;
-  const dateStr = $('#adjust-date').value;
-  const hour = parseInt($('#adjust-hour').value, 10);
-  const minute = parseInt($('#adjust-min').value, 10);
-  const parts = dateStr ? dateStr.split('-').map((s) => parseInt(s, 10)) : [];
-  if (parts.length !== 3 || parts.some(isNaN) || isNaN(hour) || isNaN(minute)) {
+  const start = state.adjustDraftTs;
+  if (start == null) {
     el.hidden = true;
     return;
   }
-  const start = new Date(parts[0], parts[1] - 1, parts[2], hour, minute, 0, 0).getTime();
   const end = start + FIVE_HOURS_MS;
   const now = Date.now();
   el.hidden = false;
+  // 起点带天前缀（昨天 23:10）；结束跨到第二天的话也标一下，免得看着像倒流
+  const startStr = `${dayPrefix(start)}${hm(new Date(start))}`;
+  const endStr = `${dayDiffFromToday(end) !== dayDiffFromToday(start) ? '次日 ' : ''}${hm(new Date(end))}`;
   if (end > now && start <= now) {
-    el.textContent = `⏱ 这个起点 → ${hm(new Date(end))} 结束 · 现在还剩 ${formatHm(end - now)}`;
+    el.textContent = `⏱ ${startStr} 起 → ${endStr} 结束 · 现在还剩 ${formatHm(end - now)}`;
   } else if (end <= now) {
-    el.textContent = `⏱ 这个起点 → ${hm(new Date(end))} 结束（已经走完啦）`;
+    el.textContent = `⏱ ${startStr} 起 → ${endStr} 结束（已经走完啦）`;
   } else {
-    el.textContent = `⏱ 这个起点 → ${hm(new Date(end))} 结束（还没开始）`;
+    el.textContent = `⏱ ${startStr} 起 → ${endStr} 结束（还没开始）`;
   }
 }
 
@@ -1780,8 +1801,8 @@ function renderAdjustPanel(window, windows) {
   const toggleBtn = $('#adjust-toggle-btn');
   const panel = $('#adjust-panel');
   const hint = $('#adjust-hint');
-  const dateInput = $('#adjust-date');
   const hourInput = $('#adjust-hour');
+  const minInput = $('#adjust-min');
   const confirmBtn = $('#adjust-confirm-btn');
 
   // 没窗口时按钮藏起来、面板收回去（不再用 hidden 属性，让 max-height 动画接管）
@@ -1807,31 +1828,24 @@ function renderAdjustPanel(window, windows) {
   // （范围保底包含当前起点），这里纯粹留个防御性兜底
   if (range.minStart > range.maxStart) {
     hint.textContent = '这个窗口被前后夹得严严实实，挪不动 (｡•́︿•̀｡)';
-    dateInput.disabled = true;
     hourInput.disabled = true;
+    minInput.disabled = true;
     confirmBtn.disabled = true;
     const remainEl = $('#adjust-remaining');
     if (remainEl) remainEl.hidden = true;
     return;
   }
 
-  dateInput.disabled = false;
   hourInput.disabled = false;
+  minInput.disabled = false;
   confirmBtn.disabled = false;
 
   const minD = new Date(range.minStart);
   const maxD = new Date(range.maxStart);
   hint.textContent = `这个窗口可以挪到 ${formatHintTime(minD)} 到 ${formatHintTime(maxD)} 之间`;
+  // 边界随相邻窗口变化，但不在这里改草稿——否则 renderAll 触发时（切主题/保存/同步）
+  // 会把用户正在调的值吞掉
   updateAdjustRemaining();
-
-  // min/max 边界每次 render 都更新（反映相邻窗口的最新状态），但不在这里写 value——
-  // 否则 renderAll 触发时（切主题/保存/同步）会把用户正在编辑的输入吞掉
-  dateInput.min = formatYMD(minD);
-  dateInput.max = formatYMD(maxD);
-}
-
-function formatYMD(d) {
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function formatHintTime(d) {
@@ -1839,14 +1853,101 @@ function formatHintTime(d) {
   return `${d.getMonth() + 1}/${d.getDate()} 周${dayNames[d.getDay()]} ${hm(d)}`;
 }
 
-// 把窗口当前起点填进输入框作为初始默认值，只在"关→开"瞬间调用
-function seedAdjustInputs(window) {
-  const curD = new Date(window.startTime);
-  $('#adjust-date').value = formatYMD(curD);
-  $('#adjust-hour').value = curD.getHours();
-  // 分钟抹到十分钟刻度，和窗口起点的取整粒度一致
-  $('#adjust-min').value = Math.floor(curD.getMinutes() / 10) * 10;
+// ——— 调起点的草稿：面板里的"时/分"只是这个时间戳的两个视图 ———
+// 起点是时间轴上的一个点，不是"日期 + 时 + 分"三个独立数字。所以 ± 直接对时间戳做
+// 加减，00:30 往前一小时就是昨天 23:30——跨天是算出来的，不需要日期框去兜。
+
+// 把草稿写进 state 并同步两个输入框的显示
+function setAdjustDraft(ts) {
+  state.adjustDraftTs = ts;
+  const d = new Date(ts);
+  const hourInput = $('#adjust-hour');
+  const minInput = $('#adjust-min');
+  if (hourInput) hourInput.value = d.getHours();
+  if (minInput) minInput.value = d.getMinutes();
   updateAdjustRemaining();
+}
+
+// 把窗口当前起点作为草稿初值，只在"关→开"瞬间调用
+function seedAdjustInputs(window) {
+  setAdjustDraft(floorToStep(window.startTime));
+}
+
+// 当前选中窗口的可调范围；没有选中窗口时 null
+function getSelectedAdjustRange() {
+  const windows = computeWindows(state.records);
+  const w = windows.find((x) => x.id === state.selectedHistoryWindowId);
+  if (!w) return null;
+  return getWindowAdjustRange(w, windows);
+}
+
+// 撞到可调范围边界时抖一下：告诉用户"到头了"，同时把范围提示闪一下引导去看
+function bumpAdjustLimit(el) {
+  const targets = [el, $('#adjust-hint')].filter(Boolean);
+  for (const t of targets) {
+    t.classList.remove('is-bumped');
+    void t.offsetWidth;   // 强制回流，连点也能重放动画
+    t.classList.add('is-bumped');
+    setTimeout(() => t.classList.remove('is-bumped'), 600);
+  }
+}
+
+// 想把草稿挪到 ts：在范围内就落地，出界就原地不动 + 抖一下（永远调不出非法值）
+function tryMoveAdjustDraft(ts, sourceEl) {
+  const range = getSelectedAdjustRange();
+  if (!range) return false;
+  if (ts < range.minStart || ts > range.maxStart) {
+    bumpAdjustLimit(sourceEl);
+    return false;
+  }
+  setAdjustDraft(ts);
+  return true;
+}
+
+// 时：在时间轴上走一小时，跨零点自然落到前/后一天
+function stepAdjustHour(delta, sourceEl) {
+  if (state.adjustDraftTs == null) return;
+  const d = new Date(state.adjustDraftTs);
+  d.setHours(d.getHours() + delta);
+  tryMoveAdjustDraft(d.getTime(), sourceEl);
+}
+
+// 分：当前小时内的刻度环，0↔50 循环。故意不进位——先用「时」把小时对准官方的
+// "Resets in x hr"，再拨分找那个 xx min，拨分时小时不能被顶掉。
+function stepAdjustMinute(delta, sourceEl) {
+  if (state.adjustDraftTs == null) return;
+  const d = new Date(state.adjustDraftTs);
+  d.setMinutes(((d.getMinutes() + delta) % 60 + 60) % 60, 0, 0);
+  tryMoveAdjustDraft(d.getTime(), sourceEl);
+}
+
+// 手输小时：hh 落到"离当前草稿最近的那个 hh"。草稿是 00:30 时敲 23，昨天 23 点差
+// 1.5h、今天 23 点差 22.5h，取近的 → 昨天 23:00，和按「时 −」按出来的结果一致。
+function commitAdjustHourInput() {
+  const cur = state.adjustDraftTs;
+  if (cur == null) return;
+  const raw = parseInt($('#adjust-hour').value, 10);
+  if (isNaN(raw)) { setAdjustDraft(cur); return; }
+  const d = new Date(cur);
+  d.setHours(((raw % 24) + 24) % 24);
+  if (d.getTime() - cur > 12 * 3600 * 1000) d.setDate(d.getDate() - 1);
+  else if (cur - d.getTime() > 12 * 3600 * 1000) d.setDate(d.getDate() + 1);
+  if (!tryMoveAdjustDraft(d.getTime(), $('#adjust-hour').closest('[data-hour-stepper]'))) {
+    setAdjustDraft(cur);   // 出界就退回原值，输入框不留非法数字
+  }
+}
+
+// 手输分钟：只动这个小时里的分，抹到十分钟刻度（和窗口起点的取整粒度一致）
+function commitAdjustMinuteInput() {
+  const cur = state.adjustDraftTs;
+  if (cur == null) return;
+  const raw = parseInt($('#adjust-min').value, 10);
+  if (isNaN(raw)) { setAdjustDraft(cur); return; }
+  const d = new Date(cur);
+  d.setMinutes(Math.min(50, Math.round((((raw % 60) + 60) % 60) / 10) * 10), 0, 0);
+  if (!tryMoveAdjustDraft(d.getTime(), $('#adjust-min').closest('[data-min-stepper]'))) {
+    setAdjustDraft(cur);
+  }
 }
 
 function toggleAdjustPanel() {
@@ -1860,6 +1961,7 @@ function toggleAdjustPanel() {
 
 function cancelAdjustPanel() {
   state.adjustOpen = false;
+  state.adjustDraftTs = null;
   const windows = computeWindows(state.records);
   const w = windows.find((x) => x.id === state.selectedHistoryWindowId);
   renderAdjustPanel(w, windows);
@@ -1870,17 +1972,9 @@ function confirmAdjustWindow() {
   const w = windows.find((x) => x.id === state.selectedHistoryWindowId);
   if (!w) return;
 
-  const dateStr = $('#adjust-date').value;
-  const hour = parseInt($('#adjust-hour').value, 10);
-  const minute = parseInt($('#adjust-min').value, 10);
-  const parts = dateStr ? dateStr.split('-').map((s) => parseInt(s, 10)) : [];
-  if (parts.length !== 3 || parts.some(isNaN) || isNaN(hour) || hour < 0 || hour > 23
-      || isNaN(minute) || minute < 0 || minute > 59) {
-    showToast('日期或时间不太对～');
-    return;
-  }
-  const newD = new Date(parts[0], parts[1] - 1, parts[2], hour, minute, 0, 0);
-  const newId = newD.getTime();
+  // 草稿本身已经被 tryMoveAdjustDraft 挡在合法范围内了，这里只做兜底校验
+  const newId = state.adjustDraftTs;
+  if (newId == null) return;
   const oldId = w.id;
   if (newId === oldId) {
     showToast('起点没变哦 (｡•́︿•̀｡)');
@@ -1907,6 +2001,7 @@ function confirmAdjustWindow() {
     state.selectedHistoryWindowId = newId;
   }
   state.adjustOpen = false;
+  state.adjustDraftTs = null;
 
   saveData();
   resetDraft();
@@ -3378,14 +3473,10 @@ function bindEvents() {
   $('#adjust-toggle-btn').addEventListener('click', toggleAdjustPanel);
   $('#adjust-cancel-btn').addEventListener('click', cancelAdjustPanel);
   $('#adjust-confirm-btn').addEventListener('click', confirmAdjustWindow);
-  // 调起点的三个输入框一变，实时预览"窗口几点结束、还剩多久"就跟着变
-  // （± 步进按钮内部会派发 input/change 事件，所以点按钮也能触发）
-  ['#adjust-date', '#adjust-hour', '#adjust-min'].forEach((sel) => {
-    const inp = $(sel);
-    if (!inp) return;
-    inp.addEventListener('input', updateAdjustRemaining);
-    inp.addEventListener('change', updateAdjustRemaining);
-  });
+  // 手输时/分：change（失焦或回车）时才解析成时间戳，边打字边跳会把人打断。
+  // 点 ± 按钮走的是 stepAdjustHour/Minute，不经过这里。
+  $('#adjust-hour').addEventListener('change', commitAdjustHourInput);
+  $('#adjust-min').addEventListener('change', commitAdjustMinuteInput);
 
   // Weekly 周导航 —— 同上
   $('#prev-week-btn').addEventListener('click', () => {
@@ -3632,20 +3723,32 @@ function stepNumberInput(input, delta, wrap) {
 
 function bindHourSteppers() {
   document.addEventListener('click', (e) => {
-    // 时步进（±1，循环 0~23）
+    // 时步进
     const hourBtn = e.target.closest('[data-hour-step]');
     if (hourBtn) {
       const wrap = hourBtn.closest('[data-hour-stepper]');
+      const delta = parseInt(hourBtn.dataset.hourStep, 10) || 0;
+      // 调起点面板里的「时」走时间轴（会跨天）；设置卡的周重置是纯 time-of-day，
+      // 没有日期概念，还是 0↔23 环绕
+      if (hourBtn.closest('#adjust-panel')) {
+        stepAdjustHour(delta, wrap);
+        return;
+      }
       const input = wrap && wrap.querySelector('input[type="number"]');
-      if (input) stepNumberInput(input, parseInt(hourBtn.dataset.hourStep, 10) || 0, 24);
+      if (input) stepNumberInput(input, delta, 24);
       return;
     }
-    // 分步进（±10，循环 0~50）
+    // 分步进（±10，循环 0~50，不进位到小时）
     const minBtn = e.target.closest('[data-min-step]');
     if (minBtn) {
       const wrap = minBtn.closest('[data-min-stepper]');
+      const delta = parseInt(minBtn.dataset.minStep, 10) || 0;
+      if (minBtn.closest('#adjust-panel')) {
+        stepAdjustMinute(delta, wrap);
+        return;
+      }
       const input = wrap && wrap.querySelector('input[type="number"]');
-      if (input) stepNumberInput(input, parseInt(minBtn.dataset.minStep, 10) || 0, 60);
+      if (input) stepNumberInput(input, delta, 60);
       return;
     }
     // 给按钮一个轻反馈（复用现有 stepTap 风格的 :active 缩放就够，无需额外 class）
