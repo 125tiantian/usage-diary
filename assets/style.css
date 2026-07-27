@@ -1195,6 +1195,12 @@ body:not(.is-bars-armed) .ring-bar-fill {
   margin-left: auto;
 }
 
+/* 卡名整块保持一行：card-title 是 flex，窄屏空间不够时默认会在
+   "Weekly / 节奏"中间拆字断行，标题看着像坏掉了 */
+.weekly-card .card-title > span:not(.weekly-nav) {
+  white-space: nowrap;
+}
+
 .weekly-nav .nav-btn {
   width: 30px;
   height: 30px;
@@ -1217,6 +1223,9 @@ body:not(.is-bars-armed) .ring-bar-fill {
   color: var(--text-primary);
   min-width: 90px;
   text-align: center;
+  /* "7/20 ~ 7/27" 是一个整体，不许在波浪号处折成两行 */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .nav-btn:disabled {
@@ -3844,6 +3853,19 @@ html[data-theme="dark"] .reset-tl-item.is-rule .reset-tl-tag {
      把空间让出来，让 prev/next 圆按钮保持正圆，不再被挤压变形 */
   .history-nav {
     gap: 12px;
+  }
+  /* 周曲线卡标题：窄屏一行放不下"卡名 + 翻周器"，之前两边一起被拆字，
+     变成"Weekly / 节奏"和"7/20 ~ / 7/27"两处断行。
+     这里锁死两行版式：卡名独占第一行，翻周器整块落到第二行居中——
+     和 5h 历史的翻页器观感一致，也避免在临界宽度上一行/两行来回跳。 */
+  .weekly-card .card-title {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .weekly-card .weekly-nav {
+    flex-basis: 100%;
+    margin-left: 0;
+    justify-content: center;
   }
   /* 5h 历史标题：手机上把"进行中/已结束"胶囊整块顶到第二行，不再拆字换行 */
   .history-title {
