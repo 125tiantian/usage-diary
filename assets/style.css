@@ -1195,6 +1195,12 @@ body:not(.is-bars-armed) .ring-bar-fill {
   margin-left: auto;
 }
 
+/* 卡名是一个整体：card-title 是 flex，窄屏空间不够时会把子项压瘦、
+   文字就地拆行，标题断成"Weekly 节 / 奏"。锁 nowrap 后不再在词中间断开 */
+.weekly-card .card-title > span:not(.weekly-nav) {
+  white-space: nowrap;
+}
+
 .weekly-nav .nav-btn {
   width: 30px;
   height: 30px;
@@ -1217,6 +1223,9 @@ body:not(.is-bars-armed) .ring-bar-fill {
   color: var(--text-primary);
   min-width: 90px;
   text-align: center;
+  /* "7/20 ~ 7/27" 是一个整体，不许在波浪号处折成两行 */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .nav-btn:disabled {
@@ -3844,6 +3853,23 @@ html[data-theme="dark"] .reset-tl-item.is-rule .reset-tl-tag {
      把空间让出来，让 prev/next 圆按钮保持正圆，不再被挤压变形 */
   .history-nav {
     gap: 12px;
+  }
+  /* 周曲线卡标题：窄屏一行放不下"卡名 + 翻周器"时不折行也不拆字，
+     而是把翻周器整体压紧一号（更小的按钮/字号/间距），
+     让"Weekly 节奏 + ‹ 7/20 ~ 7/27 ›"在手机宽度上仍然稳稳一行 */
+  .weekly-card .card-title {
+    gap: 6px;
+  }
+  .weekly-nav {
+    gap: 4px;
+  }
+  .weekly-nav .nav-btn {
+    width: 26px;
+    height: 26px;
+  }
+  .weekly-nav-title {
+    font-size: 13px;
+    padding: 4px 6px;
   }
   /* 5h 历史标题：手机上把"进行中/已结束"胶囊整块顶到第二行，不再拆字换行 */
   .history-title {
