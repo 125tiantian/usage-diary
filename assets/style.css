@@ -1221,7 +1221,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  min-width: 90px;
+  /* 固定宽度（不是 min-width）：标题在"本周"和"7/20 ~ 7/27"之间切换时
+     盒子宽度纹丝不动，两侧的翻周箭头就永远钉在同一个位置。
+     132px 按最长日期"11/30 ~ 12/6"+ chevron + 内边距留好了余量 */
+  width: 132px;
   text-align: center;
   /* "7/20 ~ 7/27" 是一个整体，不许在波浪号处折成两行 */
   white-space: nowrap;
@@ -3870,6 +3873,8 @@ html[data-theme="dark"] .reset-tl-item.is-rule .reset-tl-tag {
   .weekly-nav-title {
     font-size: 13px;
     padding: 4px 6px;
+    /* 手机字号小一号，固定宽度也同步收窄，按钮照样钉住不动 */
+    width: 118px;
   }
   /* 5h 历史标题：手机上把"进行中/已结束"胶囊整块顶到第二行，不再拆字换行 */
   .history-title {
