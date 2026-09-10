@@ -216,9 +216,11 @@ function saveData() {
       version: 1,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    return true;
   } catch (e) {
     console.warn('保存数据失败', e);
-    showToast('保存失败 (｡•́︿•̀｡)');
+    showToast('未能保存到本机，请稍后重试');
+    return false;
   }
 }
 
@@ -756,37 +758,40 @@ function addRecord(fiveH, weekly, noteText, isCorrection) {
   const ts = Date.now();
   const lastRecord = state.records[state.records.length - 1];
   const windowId = determineWindowId(ts, lastRecord);
+  const previousRecords = state.records;
+  const previousSelection = state.selectedHistoryWindowId;
+  const nextRecords = state.records.slice();
+  const trimmed = (noteText || '').trim();
 
   // 修正路径：上一条同窗口、且这次明确是"低于上次"的修正 → 覆盖而不是追加
   if (isCorrection && lastRecord && lastRecord.windowId === windowId) {
-    lastRecord.timestamp = ts;
-    lastRecord.fiveH = Math.round(fiveH);
-    lastRecord.weekly = Math.round(weekly);
+    const corrected = { ...lastRecord, timestamp: ts, fiveH: Math.round(fiveH), weekly: Math.round(weekly) };
     // 备注框为空时不动旧备注（备注框默认是空的，不能让"修正数字"顺手清掉旧笔记）
-    const trimmed = (noteText || '').trim();
-    if (trimmed) lastRecord.note = trimmed;
-    state.selectedHistoryWindowId = windowId;
-    saveData();
-    return;
+    if (trimmed) corrected.note = trimmed;
+    nextRecords[nextRecords.length - 1] = corrected;
+  } else {
+    const record = {
+      id: ts,
+      timestamp: ts,
+      fiveH: Math.round(fiveH),
+      weekly: Math.round(weekly),
+      windowId,
+    };
+    if (trimmed) record.note = trimmed;
+    nextRecords.push(record);
   }
 
-  const record = {
-    id: ts,
-    timestamp: ts,
-    fiveH: Math.round(fiveH),
-    weekly: Math.round(weekly),
-    windowId: windowId,
-  };
-
-  const trimmed = (noteText || '').trim();
-  if (trimmed) record.note = trimmed;
-
-  state.records.push(record);
+  state.records = nextRecords;
   // 记一笔之后自动把历史视图选中跟到这条记录所在的窗口。
   // 主要是为了解决"时间推进开了新窗口、但历史卡还停在上个窗口"的体感割裂——
   // 用户刚记的这一笔一般就是他最想看的，让视图跟过去更自然
   state.selectedHistoryWindowId = windowId;
-  saveData();
+  if (!saveData()) {
+    state.records = previousRecords;
+    state.selectedHistoryWindowId = previousSelection;
+    return false;
+  }
+  return true;
 }
 
 // 旧数据兼容：早期版本的备注是按"窗口 id"存的（state.notes[windowId]），
@@ -1052,7 +1057,7 @@ async function handleSave() {
   const anyChanged = changed5h || changedW;
 
   const noteText = $('#window-note').value;
-  addRecord(state.draft5h, state.draftWeekly, noteText, isCorrection);
+  if (!addRecord(state.draft5h, state.draftWeekly, noteText, isCorrection)) return;
 
   // 备注挂到记录上之后清空输入框，下次记一笔从空开始
   $('#window-note').value = '';
@@ -2023,7 +2028,7 @@ function escapeHtml(str) {
    11. 设置面板
    ================================================= */
 
-function openSettings() {
+function openSettings(event) {
   $('#setting-weekly-day').value = state.settings.weeklyResetDay;
   $('#setting-weekly-hour').value = state.settings.weeklyResetHour;
   fillSyncInputs();
@@ -2034,8 +2039,7 @@ function openSettings() {
   const themeSystemToggle = $('#theme-system-toggle');
   if (themeSystemToggle) themeSystemToggle.checked = getThemeMode() === 'system';
   const mask = $('#settings-modal');
-  mask.classList.remove('is-closing');
-  mask.hidden = false;
+  openModal(mask, closeSettings, $('#settings-close'), event?.currentTarget || $('#settings-btn'));
 }
 
 // 渲染"这周的起点"卡的状态化展示
@@ -2246,8 +2250,8 @@ function applyWeeklySettings() {
 
 // 折叠区里点「保存」：写回设置 → 收起折叠 → 上方文字浮动刷新 + 气泡反馈
 function saveWeeklySettings() {
-  applyWeeklySettings();
-  saveData();
+  const changed = persistWeeklySettings();
+  if (changed === null) return;
 
   // 收起「改重置时间」折叠区
   const btn = $('#weekly-save-btn');
@@ -2255,7 +2259,7 @@ function saveWeeklySettings() {
   if (foldable) foldable.classList.remove('is-open');
 
   // 其它依赖周起点的卡也跟着新规则刷新
-  renderAll();
+  if (changed) renderAll();
 
   // 上方状态文字带"消解 → 浮入"动画刷新成新值
   const dayEl = $('#reset-stat-day');
@@ -2272,25 +2276,31 @@ function saveWeeklySettings() {
   fireAnim($('#reset-save-toast'), 'is-showing', 1300);
 }
 
-function closeSettings() {
-  applyWeeklySettings();
-  saveData();
+// 设置写盘失败时也恢复内存状态；表单保持原样，方便重试。
+function persistWeeklySettings() {
+  const day = Number($('#setting-weekly-day').value);
+  const hourValue = $('#setting-weekly-hour').value;
+  const hour = Number(hourValue);
+  if (hourValue.trim() === '' || !Number.isInteger(day) || day < 0 || day > 6 ||
+      !Number.isInteger(hour) || hour < 0 || hour > 23) {
+    showToast('重置小时请填写 0–23 的整数');
+    return null;
+  }
+  const previous = { ...state, settings: JSON.parse(JSON.stringify(state.settings)) };
+  const changed = applyWeeklySettings();
+  if (changed && !saveData()) {
+    Object.assign(state, previous);
+    return null;
+  }
+  return changed;
+}
 
-  // 关闭动画：加 .is-closing 触发遮罩淡出 + 弹层下滑，
-  // 等遮罩的 fadeOut 动画跑完之后再 hidden=true 并把 class 清掉，
-  // 这样下一次打开是干净的初始状态、能正常播放打开动画。
+function closeSettings() {
   const mask = $('#settings-modal');
-  mask.classList.add('is-closing');
-  const onEnd = (e) => {
-    // animationend 会在每个有动画的元素上各触发一次，
-    // 只认遮罩自己的 fadeOut 那一次就行
-    if (e.target !== mask || e.animationName !== 'fadeOut') return;
-    mask.hidden = true;
-    mask.classList.remove('is-closing');
-    mask.removeEventListener('animationend', onEnd);
-    renderAll();
-  };
-  mask.addEventListener('animationend', onEnd);
+  if (mask.hidden || mask.classList.contains('is-closing')) return;
+  const changed = persistWeeklySettings();
+  if (changed === null) return;
+  closeModal(mask, () => { if (changed) renderAll(); });
 }
 
 function exportJSON() {
@@ -2306,9 +2316,12 @@ function exportJSON() {
   const a = document.createElement('a');
   a.href = url;
   a.download = `limit-diary-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
-  showToast('已导出 ✨');
+  a.remove();
+  // 给 Safari 的下载流程留出读取 Blob 的时间。
+  setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+  showToast('已发起导出 ✨');
 }
 
 function importJSON(file) {
@@ -3045,6 +3058,143 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { t.hidden = true; }, 1800);
 }
 
+// 所有弹层共用一个栈：内层关闭时，背景仍保持锁定。
+const modalStack = [];
+const modalClosers = new Map();
+let modalPageState = null;
+
+function updateModalViewport() {
+  const viewport = window.visualViewport;
+  // 不干预用户双指缩放；只跟随工具栏和软键盘改变的可见区域。
+  if (!viewport || viewport.scale > 1.01) return;
+  document.documentElement.style.setProperty('--modal-height', `${viewport.height}px`);
+  document.documentElement.style.setProperty('--modal-top', `${Math.max(0, viewport.offsetTop)}px`);
+}
+
+function lockModalPage() {
+  const body = document.body;
+  const root = document.documentElement;
+  const page = $('.page');
+  const scrollbar = window.innerWidth - root.clientWidth;
+  const paddingRight = parseFloat(getComputedStyle(body).paddingRight) || 0;
+  modalPageState = {
+    x: window.scrollX, y: window.scrollY,
+    bodyStyle: body.getAttribute('style'),
+    overflow: root.style.overflow,
+    pageInert: page.inert,
+  };
+  // iOS 上只设置 overflow:hidden 不够，固定 body 并保存原来的滚动位置。
+  Object.assign(body.style, {
+    position: 'fixed', top: `${-modalPageState.y}px`, left: `${-modalPageState.x}px`,
+    width: '100%', overflow: 'hidden', paddingRight: `${paddingRight + scrollbar}px`,
+  });
+  root.style.overflow = 'hidden';
+  page.inert = true;
+  updateModalViewport();
+  window.visualViewport?.addEventListener('resize', updateModalViewport);
+  window.visualViewport?.addEventListener('scroll', updateModalViewport);
+  document.addEventListener('keydown', handleModalKeydown, true);
+}
+
+function unlockModalPage() {
+  const saved = modalPageState;
+  if (!saved) return;
+  const root = document.documentElement;
+  window.visualViewport?.removeEventListener('resize', updateModalViewport);
+  window.visualViewport?.removeEventListener('scroll', updateModalViewport);
+  document.removeEventListener('keydown', handleModalKeydown, true);
+  root.style.removeProperty('--modal-height');
+  root.style.removeProperty('--modal-top');
+  if (saved.bodyStyle === null) document.body.removeAttribute('style');
+  else document.body.setAttribute('style', saved.bodyStyle);
+  root.style.overflow = saved.overflow;
+  $('.page').inert = saved.pageInert;
+  const scrollBehavior = root.style.scrollBehavior;
+  root.style.scrollBehavior = 'auto';
+  window.scrollTo(saved.x, saved.y);
+  root.style.scrollBehavior = scrollBehavior;
+  modalPageState = null;
+}
+
+function handleModalKeydown(e) {
+  const top = modalStack[modalStack.length - 1];
+  if (!top) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    top.onEscape();
+  } else if (e.key === 'Tab') {
+    const focusable = [...top.mask.querySelectorAll(
+      'button, input, select, textarea, a[href], [tabindex]'
+    )].filter(el => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length &&
+      !el.closest('[hidden], [inert], .foldable:not(.is-open) .fold-body'));
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!first || !focusable.includes(document.activeElement)) {
+      e.preventDefault();
+      (e.shiftKey ? last : first)?.focus({ preventScroll: true });
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus({ preventScroll: true });
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus({ preventScroll: true });
+    }
+  }
+}
+
+function openModal(mask, onEscape, initialFocus, returnFocus = document.activeElement) {
+  // 打开动画/关闭动画期间重复操作，也只保留一个栈条目和一份滚动锁。
+  modalClosers.get(mask)?.();
+  if (!modalStack.some(entry => entry.mask === mask)) {
+    if (modalStack.length === 0) lockModalPage();
+    modalStack.push({ mask, onEscape, returnFocus, zIndex: mask.style.zIndex });
+  }
+  mask.classList.remove('is-closing');
+  mask.hidden = false;
+  modalStack.forEach((entry, index) => {
+    entry.mask.inert = entry.mask !== mask;
+    entry.mask.style.zIndex = String(100 + index * 10);
+  });
+  initialFocus?.focus({ preventScroll: true });
+}
+
+function closeModal(mask, afterClose = () => {}) {
+  if (mask.hidden || modalClosers.has(mask)) return;
+  let timer;
+  const cleanup = () => {
+    clearTimeout(timer);
+    mask.removeEventListener('animationend', onEnd);
+    modalClosers.delete(mask);
+  };
+  const finish = () => {
+    cleanup();
+    mask.hidden = true;
+    mask.inert = false;
+    mask.classList.remove('is-closing');
+    const index = modalStack.findIndex(entry => entry.mask === mask);
+    const wasTop = index === modalStack.length - 1;
+    const entry = index < 0 ? null : modalStack.splice(index, 1)[0];
+    if (entry) mask.style.zIndex = entry.zIndex;
+    const top = modalStack[modalStack.length - 1];
+    if (top) top.mask.inert = false;
+    else unlockModalPage();
+    if (wasTop && entry?.returnFocus?.isConnected &&
+        !entry.returnFocus.closest('[hidden], [inert]')) {
+      entry.returnFocus.focus({ preventScroll: true });
+    }
+    afterClose();
+  };
+  const onEnd = e => {
+    if (e.target === mask && e.animationName === 'fadeOut') finish();
+  };
+  modalClosers.set(mask, cleanup);
+  mask.addEventListener('animationend', onEnd);
+  mask.classList.add('is-closing');
+  // 动画被打断/禁用时仍能关闭并释放滚动锁。
+  timer = setTimeout(finish, 450);
+}
+
 // 治愈风自定义确认弹窗。替代原生 confirm()，让弹窗和整个项目的视觉风格一致。
 // 返回 Promise<boolean>：true = 用户点了"确定"、false = 用户点了"取消"/ESC/点遮罩。
 // opts 支持：
@@ -3059,7 +3209,7 @@ function confirmDialog(opts = {}) {
     const mask = document.createElement('div');
     mask.className = 'modal-mask';
     mask.innerHTML = `
-      <div class="modal confirm-dialog${opts.danger ? ' is-danger' : ''}">
+      <div class="modal confirm-dialog${opts.danger ? ' is-danger' : ''}" role="dialog" aria-modal="true" aria-label="${escapeHtml(opts.title || '确定要这么做吗？')}">
         <div class="confirm-icon">${opts.icon || '❓'}</div>
         <div class="confirm-title">${escapeHtml(opts.title || '确定要这么做吗？')}</div>
         ${opts.message ? `<div class="confirm-message">${escapeHtml(opts.message)}</div>` : ''}
@@ -3074,30 +3224,18 @@ function confirmDialog(opts = {}) {
     const cancelBtn = mask.querySelector('.confirm-btn--cancel');
     const confirmBtn = mask.querySelector('.confirm-btn--confirm');
 
-    // 默认把焦点放在"取消"上，避免用户一个不留神 Enter 就误触确定
-    requestAnimationFrame(() => cancelBtn.focus());
-
     let settled = false;
     const close = (result) => {
       if (settled) return;
       settled = true;
-      document.removeEventListener('keydown', onKey);
-      // 复用 settings-modal 的关闭动画：淡出遮罩 + 下滑弹层
-      mask.classList.add('is-closing');
-      const onEnd = (e) => {
-        if (e.target !== mask || e.animationName !== 'fadeOut') return;
-        mask.removeEventListener('animationend', onEnd);
+      closeModal(mask, () => {
         mask.remove();
-      };
-      mask.addEventListener('animationend', onEnd);
-      resolve(result);
+        resolve(result);
+      });
     };
 
-    const onKey = (e) => {
-      if (e.key === 'Escape') { e.preventDefault(); close(false); }
-      else if (e.key === 'Enter') { e.preventDefault(); close(true); }
-    };
-    document.addEventListener('keydown', onKey);
+    // Enter 遵循当前按钮的原生行为；默认聚焦取消，不再被全局 Enter 误确认。
+    openModal(mask, () => close(false), cancelBtn);
 
     cancelBtn.addEventListener('click', () => close(false));
     confirmBtn.addEventListener('click', () => close(true));
@@ -3386,7 +3524,7 @@ function bindEvents() {
 
   // 键盘 ↑↓ 调整 5h
   document.addEventListener('keydown', (e) => {
-    if (e.target.matches('textarea, input')) return;
+    if (modalStack.length || e.target.matches('textarea, input, select')) return;
     if (e.key === 'ArrowUp') {
       handleStep('5h', e.shiftKey ? 5 : 1);
       e.preventDefault();
@@ -3547,8 +3685,8 @@ function bindEvents() {
   // 云同步
   const syncBtn = $('#sync-btn');
   if (syncBtn) {
-    syncBtn.addEventListener('click', () => {
-      openSettings();
+    syncBtn.addEventListener('click', (e) => {
+      openSettings(e);
       setTimeout(() => {
         const el = $('#sync-status-box');
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -3613,9 +3751,9 @@ function bindEvents() {
   // 这里监听 document 级别的 touchstart，如果触摸目标不是任何 canvas，
   // 就主动把所有图表的 tooltip 和高亮清掉。
   document.addEventListener('touchstart', (e) => {
-    if (e.target.tagName === 'CANVAS') return;
+    if (modalStack.length || e.target.closest('canvas')) return;
     [rateChart, weeklyChart, windowChart].forEach(chart => {
-      if (!chart) return;
+      if (!chart || (!chart.getActiveElements().length && !chart.tooltip.getActiveElements().length)) return;
       chart.setActiveElements([]);
       chart.tooltip.setActiveElements([], { x: 0, y: 0 });
       chart.update('none');
@@ -3756,9 +3894,7 @@ function bindHourSteppers() {
 }
 
 // —— 历史挑选弹层 —— 点击 5h 历史标题 / Weekly 周标题，弹出可滚动列表，直接跳到对应项
-let pickerLastTrigger = null;
-
-function openPicker(kind) {
+function openPicker(kind, trigger) {
   const mask = $('#picker-mask');
   const titleEl = $('#picker-title');
   const list = $('#picker-list');
@@ -3804,31 +3940,21 @@ function openPicker(kind) {
   }
 
   mask.dataset.pickerKind = kind;
-  mask.classList.remove('is-closing');
-  mask.hidden = false;
+  openModal(mask, closePicker, $('#picker-close'), trigger || document.activeElement);
 
   // 滚动到当前选中项，让用户一打开就看到自己当前在哪
   requestAnimationFrame(() => {
+    if (mask.hidden || mask.classList.contains('is-closing')) return;
     const sel = list.querySelector('.picker-item.is-selected');
-    if (sel) sel.scrollIntoView({ block: 'center' });
+    // 只移动列表，不让 scrollIntoView 顺带移动页面或 Safari 可见视口。
+    if (sel) list.scrollTop += sel.getBoundingClientRect().top - list.getBoundingClientRect().top
+      - (list.clientHeight - sel.offsetHeight) / 2;
   });
 }
 
 function closePicker() {
   const mask = $('#picker-mask');
-  if (!mask || mask.hidden) return;
-  mask.classList.add('is-closing');
-  const onEnd = (e) => {
-    if (e.target !== mask || e.animationName !== 'fadeOut') return;
-    mask.hidden = true;
-    mask.classList.remove('is-closing');
-    mask.removeEventListener('animationend', onEnd);
-    if (pickerLastTrigger) {
-      try { pickerLastTrigger.focus({ preventScroll: true }); } catch (_) {}
-      pickerLastTrigger = null;
-    }
-  };
-  mask.addEventListener('animationend', onEnd);
+  if (mask) closeModal(mask);
 }
 
 function buildWindowPickerItems() {
@@ -4207,8 +4333,7 @@ function bindPicker() {
     }
     const trigger = e.target.closest('[data-picker]');
     if (trigger) {
-      pickerLastTrigger = trigger;
-      openPicker(trigger.dataset.picker);
+      openPicker(trigger.dataset.picker, trigger);
       return;
     }
     // 列表项
@@ -4231,9 +4356,8 @@ function bindPicker() {
     if (e.target === mask) closePicker();
   });
 
-  // ESC 关闭 / 圆点聚焦时回车空格切换类型
+  // 圆点聚焦时回车空格切换类型；Escape 统一交给弹层栈。
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !$('#picker-mask').hidden) { closePicker(); return; }
     if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-reset-toggle]')) {
       e.preventDefault();
       toggleResetKind(parseInt(e.target.dataset.resetToggle, 10));
