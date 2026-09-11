@@ -329,10 +329,9 @@ input, textarea, select {
   transition: background 0.2s var(--ease-soft);
   position: relative;   /* 给 tooltip 伪元素做定位锚点 */
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .icon-btn:hover {
-    background: var(--c-divider);
-  }
+
+.icon-btn:hover {
+  background: var(--c-divider);
 }
 
 /* ============ 5. 状态卡 × 2 ============ */
@@ -356,7 +355,7 @@ input, textarea, select {
    手机触屏会把"点一下"也当作 hover 触发一帧，造成卡片"抽一下"的视觉抖动
    （文字位置跟着 translateY 跳、box-shadow 粘住）。 */
 @media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .status-card:hover {
+  .status-card:hover {
     box-shadow: var(--shadow-hover);
     transform: translateY(-2px);
   }
@@ -455,7 +454,7 @@ body:not(.is-bars-armed) .ring-bar-fill {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .card:hover {
+  .card:hover {
     box-shadow: var(--shadow-hover);
   }
 }
@@ -608,8 +607,17 @@ body:not(.is-bars-armed) .ring-bar-fill {
 .input-sub--5h .big-number { color: var(--c-5h-deep); }
 .input-sub--weekly .big-number { color: var(--c-weekly-deep); }
 
-.big-number { font-variant-numeric: tabular-nums; }
-.big-number > span[id] { display: inline-block; }
+/* 按 +/− 时大数字小弹跳：scale 1 → 1.08 → 1，慢且柔
+   旧版本叫 .bump、用 1.10 + ease-bounce、0.32s，弹得过头也太快。
+   新版改用 ease-out 曲线和 380ms，更"舒展"而不是"啪一下" */
+.big-number.is-pulse {
+  animation: numPulse 380ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes numPulse {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
 
 .big-number-pct {
   font-size: 32px;
@@ -738,11 +746,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   background: var(--overlay-mid);
   color: var(--text-secondary);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .step-btn--minus:hover {
-    background: var(--overlay-strong);
-    color: var(--text-primary);
-  }
+
+.step-btn--minus:hover {
+  background: var(--overlay-strong);
+  color: var(--text-primary);
 }
 
 .step-btn--plus {
@@ -755,20 +762,32 @@ body:not(.is-bars-armed) .ring-bar-fill {
   background: var(--c-5h);
   color: white;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .input-sub--5h .step-btn--plus:hover {
-    background: var(--c-5h-deep);
-  }
+
+.input-sub--5h .step-btn--plus:hover {
+  background: var(--c-5h-deep);
 }
 
 .input-sub--weekly .step-btn--plus {
   background: var(--c-weekly);
   color: white;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .input-sub--weekly .step-btn--plus:hover {
-    background: var(--c-weekly-deep);
-  }
+
+.input-sub--weekly .step-btn--plus:hover {
+  background: var(--c-weekly-deep);
+}
+
+.step-btn:active {
+  transform: translateY(1px) scale(0.96);
+}
+
+/* 步进按钮被点击时的弹回反馈（class 由 JS 在点击时打上） */
+.step-btn.is-tapped {
+  animation: stepTap 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes stepTap {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(0.88); }
+  100% { transform: scale(1); }
 }
 
 /* —— 备注 —— */
@@ -832,13 +851,26 @@ body:not(.is-bars-armed) .ring-bar-fill {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .save-btn:hover {
+  .save-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 24px rgba(245, 166, 120, 0.45);
   }
 }
 
+.save-btn:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* —— 保存按钮：按下凹陷 + 反弹（class 由 JS 控制） —— */
 .save-btn { position: relative; overflow: hidden; }
+.save-btn.is-pressing {
+  transform: scale(0.96);
+  transition: transform 110ms ease-out;
+}
+.save-btn.is-rebound {
+  transform: scale(1);
+  transition: transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
 /* 按钮中央扩散一圈光晕涟漪 */
 .save-btn .ripple {
   position: absolute;
@@ -1178,11 +1210,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   width: 7px;
   height: 7px;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .weekly-nav .nav-btn:hover {
-    background: var(--c-weekly-soft);
-    color: var(--c-weekly-deep);
-  }
+
+.weekly-nav .nav-btn:hover {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
 }
 
 .weekly-nav-title {
@@ -1251,11 +1282,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   cursor: pointer;
   transition: background 0.18s var(--ease-soft), color 0.18s var(--ease-soft);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .reset-history-btn:hover {
-    background: var(--bg-soft);
-    color: var(--text-secondary);
-  }
+
+.reset-history-btn:hover {
+  background: var(--bg-soft);
+  color: var(--text-secondary);
 }
 
 .reset-history-chev {
@@ -1263,10 +1293,9 @@ body:not(.is-bars-armed) .ring-bar-fill {
   font-weight: 700;
   transition: transform 0.18s var(--ease-soft);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .reset-history-btn:hover .reset-history-chev {
-    transform: translateX(2px);
-  }
+
+.reset-history-btn:hover .reset-history-chev {
+  transform: translateX(2px);
 }
 
 /* ============ 9. 5h 历史卡 ============ */
@@ -1319,11 +1348,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
 .nav-btn--next::before {
   transform: translateX(-1.5px) rotate(-45deg);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .nav-btn:hover {
-    background: var(--c-5h-soft);
-    color: var(--c-5h-deep);
-  }
+
+.nav-btn:hover {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
 }
 
 .nav-btn:active {
@@ -1545,11 +1573,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
 .notes-area > .notes-list {
   text-align: left;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .notes-expand-btn:hover {
-    background: var(--c-5h-soft);
-    color: var(--c-5h-deep);
-  }
+
+.notes-expand-btn:hover {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
 }
 
 /* 单箭头：默认指向下（展开），点开后旋转 180° 指向上（收起）。
@@ -1608,10 +1635,8 @@ body:not(.is-bars-armed) .ring-bar-fill {
   background: rgba(120, 110, 100, 0.18);
   border-radius: 3px;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .notes-list::-webkit-scrollbar-thumb:hover {
-    background: rgba(120, 110, 100, 0.32);
-  }
+.notes-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 110, 100, 0.32);
 }
 
 /* 收起态：用 class 而不是 [hidden]，因为 [hidden] 是 display:none，
@@ -1772,10 +1797,8 @@ body:not(.is-bars-armed) .ring-bar-fill {
   background: rgba(120, 110, 100, 0.22);
   border-radius: 3px;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .modal-body::-webkit-scrollbar-thumb:hover {
-    background: rgba(120, 110, 100, 0.38);
-  }
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 110, 100, 0.38);
 }
 
 /* ---- 治愈风确认弹窗（替代原生 confirm()） ----
@@ -1854,11 +1877,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   background: var(--overlay-mid);
   color: var(--text-secondary);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .confirm-btn--cancel:hover {
-    background: var(--overlay-strong);
-    transform: translateY(-1px);
-  }
+
+.confirm-btn--cancel:hover {
+  background: var(--overlay-strong);
+  transform: translateY(-1px);
 }
 
 .confirm-btn--confirm {
@@ -1866,11 +1888,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   color: #FFFFFF;
   box-shadow: 0 6px 16px rgba(245, 166, 120, 0.32);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .confirm-btn--confirm:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 22px rgba(245, 166, 120, 0.42);
-  }
+
+.confirm-btn--confirm:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 22px rgba(245, 166, 120, 0.42);
 }
 
 .confirm-btn:active {
@@ -1882,10 +1903,9 @@ body:not(.is-bars-armed) .ring-bar-fill {
   background: linear-gradient(135deg, var(--c-warn) 0%, #F4B48E 100%);
   box-shadow: 0 6px 16px rgba(232, 156, 126, 0.38);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .confirm-dialog.is-danger .confirm-btn--confirm:hover {
-    box-shadow: 0 10px 22px rgba(232, 156, 126, 0.5);
-  }
+
+.confirm-dialog.is-danger .confirm-btn--confirm:hover {
+  box-shadow: 0 10px 22px rgba(232, 156, 126, 0.5);
 }
 
 /* focus 指示（键盘导航无障碍）*/
@@ -2049,10 +2069,9 @@ body:not(.is-bars-armed) .ring-bar-fill {
               border-color 0.2s var(--ease-soft),
               color 0.2s var(--ease-soft);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .text-btn:hover {
-    background: var(--c-divider);
-  }
+
+.text-btn:hover {
+  background: var(--c-divider);
 }
 
 /* —— 主按钮：用 weekly 鼠尾草绿做填充，强调"日常会用"的高频操作 —— */
@@ -2061,11 +2080,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   color: var(--c-weekly-deep);
   font-weight: 600;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .text-btn--primary:hover {
-    background: var(--c-weekly-soft-deep);
-    color: var(--c-weekly-deep);
-  }
+
+.text-btn--primary:hover {
+  background: var(--c-weekly-soft-deep);
+  color: var(--c-weekly-deep);
 }
 
 /* —— 幽灵按钮：透明底 + 细边框，视觉权重最低，给次要操作 —— */
@@ -2074,12 +2092,11 @@ body:not(.is-bars-armed) .ring-bar-fill {
   border-color: var(--c-divider);
   color: var(--text-secondary);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .text-btn--ghost:hover {
-    background: var(--bg-soft);
-    border-color: var(--text-mute);
-    color: var(--text-primary);
-  }
+
+.text-btn--ghost:hover {
+  background: var(--bg-soft);
+  border-color: var(--text-mute);
+  color: var(--text-primary);
 }
 
 /* —— 危险按钮：暗暖红 + 浅底，含蓄但能识别 —— */
@@ -2088,11 +2105,10 @@ body:not(.is-bars-armed) .ring-bar-fill {
   color: var(--c-warn);
   border-color: rgba(232, 156, 126, 0.25);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .text-btn--danger:hover {
-    background: rgba(232, 156, 126, 0.18);
-    border-color: rgba(232, 156, 126, 0.45);
-  }
+
+.text-btn--danger:hover {
+  background: rgba(232, 156, 126, 0.18);
+  border-color: rgba(232, 156, 126, 0.45);
 }
 
 /* —— 通用按钮行：统一行内按钮的间距和换行 —— */
@@ -3025,10 +3041,9 @@ body.is-ready .input-card {
   cursor: pointer;
   font-family: inherit;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .fold-toggle:hover {
-    color: var(--text-primary);
-  }
+
+.fold-toggle:hover {
+  color: var(--text-primary);
 }
 
 .fold-arrow {
@@ -3138,11 +3153,10 @@ body.is-ready .input-card {
   color: var(--c-5h-deep);
   font-weight: 600;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .text-btn--accent:hover {
-    background: var(--c-5h-soft-deep);
-    color: var(--c-5h-deep);
-  }
+
+.text-btn--accent:hover {
+  background: var(--c-5h-soft-deep);
+  color: var(--c-5h-deep);
 }
 
 .text-btn--ghost-warn {
@@ -3150,11 +3164,10 @@ body.is-ready .input-card {
   border: 1px solid rgba(232, 156, 126, 0.4);
   color: var(--c-warn);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .text-btn--ghost-warn:hover {
-    background: rgba(232, 156, 126, 0.12);
-    color: var(--c-warn);
-  }
+
+.text-btn--ghost-warn:hover {
+  background: rgba(232, 156, 126, 0.12);
+  color: var(--c-warn);
 }
 
 /* more-card */
@@ -3300,21 +3313,20 @@ body.is-ready .input-card {
     color 0.15s var(--ease-soft),
     transform 0.18s var(--ease-bounce);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .hour-stepper-btn:hover {
-    background: var(--c-5h-soft);
-    color: var(--c-5h-deep);
-  }
+
+.hour-stepper-btn:hover {
+  background: var(--c-5h-soft);
+  color: var(--c-5h-deep);
 }
 
-
+.hour-stepper-btn:active {
+  transform: scale(0.9);
+}
 
 /* 设置卡里"周重置"那块用 weekly 绿调，跟它的语义对齐 */
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .reset-card .hour-stepper-btn:hover {
-    background: var(--c-weekly-soft);
-    color: var(--c-weekly-deep);
-  }
+.reset-card .hour-stepper-btn:hover {
+  background: var(--c-weekly-soft);
+  color: var(--c-weekly-deep);
 }
 
 /* ============ 15. 历史挑选触发器 + 弹层 ============
@@ -3347,16 +3359,12 @@ body.is-ready .input-card {
   transform: rotate(45deg);
   transition: border-color 0.18s var(--ease-soft), transform 0.18s var(--ease-soft);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .picker-trigger:hover {
-    background: var(--bg-soft);
-  }
+
+.picker-trigger:hover {
+  background: var(--bg-soft);
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .picker-trigger:hover::after {
-    border-color: var(--c-5h-deep);
-  }
-}
+
+.picker-trigger:hover::after,
 .picker-trigger:focus-visible::after {
   border-color: var(--c-5h-deep);
 }
@@ -3365,11 +3373,8 @@ body.is-ready .input-card {
 .weekly-nav-title.picker-trigger::after {
   margin-top: -5px;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .weekly-nav-title.picker-trigger:hover::after {
-    border-color: var(--c-weekly-deep);
-  }
-}
+
+.weekly-nav-title.picker-trigger:hover::after,
 .weekly-nav-title.picker-trigger:focus-visible::after {
   border-color: var(--c-weekly-deep);
 }
@@ -3601,10 +3606,9 @@ body.is-ready .input-card {
 .picker-item + .picker-item {
   margin-top: 2px;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .picker-item:hover {
-    background: var(--bg-soft);
-  }
+
+.picker-item:hover {
+  background: var(--bg-soft);
 }
 
 /* 当前选中：5h 用蜜桃橘调、Weekly 用鼠尾草绿调，分别对齐两边的主题色 */
@@ -3762,10 +3766,8 @@ body.is-ready .input-card {
   inset: -9px;            /* 命中区扩到约 28px 见方，手机也好戳 */
   border-radius: 50%;
 }
-@media (hover: hover) and (pointer: fine) {
-  :where(html:not([data-input="touch"])) .reset-tl-dot.is-toggleable:hover {
-    transform: scale(1.28);
-  }
+.reset-tl-dot.is-toggleable:hover {
+  transform: scale(1.28);
 }
 .reset-tl-dot.is-toggleable:focus-visible {
   outline: 2px solid var(--c-rate-deep);
@@ -3954,92 +3956,7 @@ html[data-theme="dark"] .reset-tl-item.is-rule .reset-tl-tag {
   }
 
   .hour-stepper-btn {
-    width: 44px;
-    height: 44px;
-    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
   }
-}
-
-
-/* 统一触摸反馈：手指落下即压入，释放即复位；不依赖 Safari 的粘滞 :active。 */
-button {
-  touch-action: manipulation;
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
-}
-button.is-pressed:not(:disabled) {
-  transform: translateY(1px) scale(0.96);
-}
-.step-btn,
-.hour-stepper-btn,
-.save-btn {
-  position: relative;
-  isolation: isolate;
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-              background-color 140ms ease, color 140ms ease,
-              box-shadow 180ms ease, opacity 140ms ease;
-}
-.step-btn::after,
-.hour-stepper-btn::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: currentColor;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 160ms ease;
-}
-.step-btn.is-pressed::after,
-.hour-stepper-btn.is-pressed::after { opacity: 0.12; transition-duration: 45ms; }
-.step-btn.is-pressed,
-.hour-stepper-btn.is-pressed,
-.save-btn.is-pressed {
-  transform: translateY(1px) scale(0.95);
-  transition-duration: 55ms;
-}
-.step-btn[aria-disabled="true"] { opacity: 0.45; box-shadow: none; }
-.step-btn[aria-disabled="true"].is-pressed { opacity: 0.6; }
-.input-sub .bar-fill--new {
-  transition: width 180ms ease-out, left 180ms ease-out, background-color 180ms ease;
-}
-#haptic-setting[hidden] { display: none; }
-.step-status {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-@media (max-width: 900px) {
-  /* 两行三列稳定对齐，让按钮用满可用宽度，指腹落点更宽。 */
-  .stepper-row {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 7px 5px;
-    width: 100%;
-  }
-  .stepper-gap { display: none; }
-  .step-btn {
-    min-width: 0;
-    min-height: 44px;
-    padding: 8px 2px;
-    font-size: 14px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  button, button::after, .input-sub .bar-fill, .input-sub .bar-marker {
-    transition: none !important;
-  }
-  button.is-pressed:not(:disabled) { transform: none; }
-  .save-btn.is-pressed { opacity: 0.8; }
-  .ripple.is-rippling, .settle-glow.is-glowing, .sweep-overlay.is-sweeping,
-  .adjust-inputs .is-bumped, #adjust-hint.is-bumped {
-    animation: none !important;
-  }
-  .save-confirm-toast.is-showing { animation: none; opacity: 1; transform: translate(-50%, -28px); }
 }
