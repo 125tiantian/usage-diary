@@ -953,10 +953,16 @@ function renderInputCard() {
 
   // 空状态提示：没有任何记录时才显示
   $('#empty-hint').hidden = state.records.length > 0;
+  document.querySelectorAll('.step-btn').forEach(btn => {
+    const value = btn.dataset.target === '5h' ? state.draft5h : state.draftWeekly;
+    const atLimit = Number(btn.dataset.step) < 0 ? value <= 0 : value >= 100;
+    // 保留焦点和边界提示；行为层同样拦住越界操作。
+    btn.setAttribute('aria-disabled', String(atLimit));
+  });
 }
 
 // 步进按钮处理
-function handleStep(target, step) {
+function handleStep(target, step, sourceEvent) {
   const before = target === '5h' ? state.draft5h : state.draftWeekly;
   if (target === '5h') {
     state.draft5h = clamp(state.draft5h + step, 0, 100);
@@ -964,32 +970,169 @@ function handleStep(target, step) {
     state.draftWeekly = clamp(state.draftWeekly + step, 0, 100);
   }
   const after = target === '5h' ? state.draft5h : state.draftWeekly;
-
+  const numEl = target === '5h' ? $('#input-5h-num') : $('#input-weekly-num');
+  if (after === before) {
+    animateFeedback(numEl, [
+      { transform: 'translateX(0)' }, { transform: 'translateX(-2px)' },
+      { transform: 'translateX(2px)' }, { transform: 'translateX(0)' },
+    ], 180);
+    announceStep(`${target === '5h' ? '5 小时' : 'Weekly'} 已到${after === 0 ? '最低 0' : '最高 100'}%`);
+    return false;
+  }
   renderInputCard();
+  // 值立刻落地，只轻移数字本身；快速连点取消前一段动画，不积压队列。
+  animateFeedback(numEl, [
+    { transform: `translateY(${step > 0 ? 3 : -3}px) scale(0.98)` },
+    { transform: 'translateY(0) scale(1)' },
+  ], 200);
+  stepHaptic(sourceEvent);
+  announceStep(`${target === '5h' ? '5 小时' : 'Weekly'} ${after}%`);
+  return true;
+}
 
-  // 大数字弹跳：只在数字真的变了时触发（夹边界时不弹，避免 +1 已经 100 还瞎闪）
-  if (after !== before) {
-    const numEl = target === '5h'
-      ? $('#input-5h-num').parentElement
-      : $('#input-weekly-num').parentElement;
-    fireAnim(numEl, 'is-pulse', 380);
+const feedbackMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const feedbackAnimations = new Map();
+let stepAnnouncementTimer;
+let lastHapticAt = -Infinity;
+let hapticsEnabled = true;
+try { hapticsEnabled = localStorage.getItem('usage-diary-haptics') !== 'off'; } catch (_) {}
+
+function animateFeedback(el, frames, duration) {
+  if (!el) return;
+  feedbackAnimations.get(el)?.cancel();
+  feedbackAnimations.delete(el);
+  if (feedbackMotion.matches || typeof el.animate !== 'function') return;
+  const animation = el.animate(frames, { duration, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+  feedbackAnimations.set(el, animation);
+  const cleanup = () => {
+    if (feedbackAnimations.get(el) === animation) feedbackAnimations.delete(el);
+  };
+  animation.onfinish = cleanup;
+  animation.oncancel = cleanup;
+}
+
+feedbackMotion.addEventListener('change', () => {
+  if (!feedbackMotion.matches) return;
+  feedbackAnimations.forEach(animation => animation.cancel());
+  feedbackAnimations.clear();
+});
+
+function announceStep(message) {
+  clearTimeout(stepAnnouncementTimer);
+  stepAnnouncementTimer = setTimeout(() => {
+    const status = $('#step-status');
+    if (status) status.textContent = message;
+  }, 250);
+}
+
+// Safari 没有 Vibration API。不要用隐藏 switch 模拟点击，或用声音冒充震动。
+// 只在有接口的触屏设备上、一次真实且有效的操作后尝试轻反馈。
+function stepHaptic(event) {
+  if (!hapticsEnabled || feedbackMotion.matches || !event?.isTrusted ||
+      !event.type.startsWith('click') || document.documentElement.dataset.input !== 'touch' ||
+      typeof navigator.vibrate !== 'function') return;
+  const now = performance.now();
+  if (now - lastHapticAt < 55) return;
+  lastHapticAt = now;
+  try { navigator.vibrate(8); } catch (_) { /* 设备拒绝也不影响数值和动效 */ }
+}
+
+// Pointer Events 只负责视觉按压；数据仍由原生 click 提交，滑动不会抢先改数。
+function bindPressFeedback() {
+  let press = null;
+  const cancelledClicks = new WeakMap();
+  const root = document.documentElement;
+  function release(cancelled = false) {
+    if (!press) return;
+    press.button.classList.remove('is-pressed');
+    if (cancelled) cancelledClicks.set(press.button, performance.now());
+    press = null;
+  }
+  document.addEventListener('pointerdown', e => {
+    root.dataset.input = e.pointerType === 'mouse' ? 'mouse' : 'touch';
+    if (!e.isPrimary || e.button !== 0) { release(true); return; }
+    release(true);
+    const button = e.target.closest('button');
+    if (!button || button.disabled || button.closest('[inert]')) return;
+    cancelledClicks.delete(button);
+    feedbackAnimations.get(button)?.cancel();
+    press = { button, id: e.pointerId, x: e.clientX, y: e.clientY, type: e.pointerType };
+    button.classList.add('is-pressed');
+  }, { passive: true });
+  document.addEventListener('pointermove', e => {
+    if (e.pointerType === 'mouse') root.dataset.input = 'mouse';
+    if (!press || e.pointerId !== press.id) return;
+    if (press.type !== 'mouse' && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) release(true);
+    else if (press.type === 'mouse' && !press.button.contains(e.target)) release(true);
+  }, { passive: true });
+  document.addEventListener('pointerup', e => {
+    if (!press || e.pointerId !== press.id) return;
+    const rect = press.button.getBoundingClientRect();
+    release(e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom);
+  }, { passive: true });
+  document.addEventListener('pointercancel', () => release(true), { passive: true });
+  window.addEventListener('blur', () => release(true));
+  window.addEventListener('pagehide', () => release(true));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) release(true); });
+  document.addEventListener('keydown', e => {
+    root.dataset.input = 'keyboard';
+    const button = e.target.closest('button');
+    if (button && !button.disabled && (e.key === ' ' || e.key === 'Enter')) {
+      button.classList.add('is-pressed');
+      press = { button, id: null };
+    }
+  });
+  document.addEventListener('keyup', () => release());
+  document.addEventListener('focusout', e => { if (press?.button === e.target) release(); });
+  // 捕获阶段先取消拖动后偶发的兼容 click，不让它进入数值/保存事件。
+  document.addEventListener('click', e => {
+    const button = e.target.closest('button');
+    if (!button || button.disabled) return;
+    const cancelledAt = cancelledClicks.get(button);
+    cancelledClicks.delete(button);
+    if (e.detail !== 0 && cancelledAt !== undefined && performance.now() - cancelledAt < 700) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
+    if (button.matches('.step-btn, .hour-stepper-btn, .save-btn')) {
+      animateFeedback(button, [
+        { transform: 'translateY(1px) scale(0.95)' },
+        { transform: 'translateY(0) scale(1)' },
+      ], 220);
+    }
+  }, true);
+
+  const hapticRow = $('#haptic-setting');
+  const hapticToggle = $('#haptic-toggle');
+  if (hapticRow && hapticToggle && typeof navigator.vibrate === 'function') {
+    hapticRow.hidden = false;
+    hapticToggle.checked = hapticsEnabled;
+    hapticToggle.addEventListener('change', () => {
+      hapticsEnabled = hapticToggle.checked;
+      try { localStorage.setItem('usage-diary-haptics', hapticsEnabled ? 'on' : 'off'); } catch (_) {}
+    });
   }
 }
 
 // 把一个 class 加到元素上触发 CSS animation，dur ms 后自动移除
 // 重复调用会先 remove + reflow + add，让动画从头开始重播
+const animationTimers = new WeakMap();
 function fireAnim(el, cls, dur) {
   if (!el) return;
+  let timers = animationTimers.get(el);
+  if (!timers) { timers = new Map(); animationTimers.set(el, timers); }
+  clearTimeout(timers.get(cls));
   el.classList.remove(cls);
   void el.offsetWidth;
   el.classList.add(cls);
-  if (dur) setTimeout(() => el.classList.remove(cls), dur);
+  if (dur) timers.set(cls, setTimeout(() => { el.classList.remove(cls); timers.delete(cls); }, dur));
 }
 
 // 从某个原点位置（一般是被点击的按钮）飞出 N 颗 ✨ 粒子，
 // 散射方向偏上方半圆，每颗的角度/距离/字符/颜色/字号都随机
 function spawnSparks(originEl, count) {
-  if (!originEl) return;
+  if (!originEl || feedbackMotion.matches) return;
   const rect = originEl.getBoundingClientRect();
   const cx = rect.left + rect.width / 2;
   const cy = rect.top + rect.height / 2;
@@ -1069,17 +1212,10 @@ async function handleSave() {
   const sweep = card && card.querySelector('.sweep-overlay');
   const toast = card && card.querySelector('.save-confirm-toast');
 
-  // 1. 按钮反馈：凹陷 → 涟漪 → 反弹 → 飞出 ✨ 粒子（永远播）
+  // 按压回弹由真实手势驱动；保存成功后才给出涟漪和粒子确认。
   if (saveBtn) {
-    saveBtn.classList.remove('is-rebound');
-    saveBtn.classList.add('is-pressing');
     fireAnim(ripple, 'is-rippling', 700);
     spawnSparks(saveBtn, anyChanged ? 7 : 3);
-    setTimeout(() => {
-      saveBtn.classList.remove('is-pressing');
-      saveBtn.classList.add('is-rebound');
-    }, 110);
-    setTimeout(() => saveBtn.classList.remove('is-rebound'), 470);
   }
 
   // 2. 进度条柔光（只对变了的那栏）
@@ -1914,7 +2050,7 @@ function stepAdjustHour(delta, sourceEl) {
   if (state.adjustDraftTs == null) return;
   const d = new Date(state.adjustDraftTs);
   d.setHours(d.getHours() + delta);
-  tryMoveAdjustDraft(d.getTime(), sourceEl);
+  return tryMoveAdjustDraft(d.getTime(), sourceEl);
 }
 
 // 分：当前小时内的刻度环，0↔50 循环。故意不进位——先用「时」把小时对准官方的
@@ -1923,7 +2059,7 @@ function stepAdjustMinute(delta, sourceEl) {
   if (state.adjustDraftTs == null) return;
   const d = new Date(state.adjustDraftTs);
   d.setMinutes(((d.getMinutes() + delta) % 60 + 60) % 60, 0, 0);
-  tryMoveAdjustDraft(d.getTime(), sourceEl);
+  return tryMoveAdjustDraft(d.getTime(), sourceEl);
 }
 
 // 手输小时：hh 落到"离当前草稿最近的那个 hh"。草稿是 00:30 时敲 23，昨天 23 点差
@@ -3509,12 +3645,15 @@ function renderAll() {
 }
 
 function bindEvents() {
+  bindPressFeedback();
   // 步进按钮
   document.querySelectorAll('.step-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    const amount = Number(btn.dataset.step);
+    btn.setAttribute('aria-label', `${btn.dataset.target === '5h' ? '5 小时' : 'Weekly'} ${amount > 0 ? '增加' : '减少'} ${Math.abs(amount)} 个百分点`);
+    btn.addEventListener('click', (e) => {
       const target = btn.dataset.target;
       const step = parseInt(btn.dataset.step, 10);
-      handleStep(target, step);
+      handleStep(target, step, e);
     });
   });
 
@@ -3869,11 +4008,11 @@ function bindHourSteppers() {
       // 调起点面板里的「时」走时间轴（会跨天）；设置卡的周重置是纯 time-of-day，
       // 没有日期概念，还是 0↔23 环绕
       if (hourBtn.closest('#adjust-panel')) {
-        stepAdjustHour(delta, wrap);
+        if (stepAdjustHour(delta, wrap)) stepHaptic(e);
         return;
       }
       const input = wrap && wrap.querySelector('input[type="number"]');
-      if (input) stepNumberInput(input, delta, 24);
+      if (input) { stepNumberInput(input, delta, 24); stepHaptic(e); }
       return;
     }
     // 分步进（±10，循环 0~50，不进位到小时）
@@ -3882,14 +4021,13 @@ function bindHourSteppers() {
       const wrap = minBtn.closest('[data-min-stepper]');
       const delta = parseInt(minBtn.dataset.minStep, 10) || 0;
       if (minBtn.closest('#adjust-panel')) {
-        stepAdjustMinute(delta, wrap);
+        if (stepAdjustMinute(delta, wrap)) stepHaptic(e);
         return;
       }
       const input = wrap && wrap.querySelector('input[type="number"]');
-      if (input) stepNumberInput(input, delta, 60);
+      if (input) { stepNumberInput(input, delta, 60); stepHaptic(e); }
       return;
     }
-    // 给按钮一个轻反馈（复用现有 stepTap 风格的 :active 缩放就够，无需额外 class）
   });
 }
 
