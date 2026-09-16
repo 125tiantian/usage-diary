@@ -2301,11 +2301,31 @@ function exportJSON() {
     fingerprint: dataFingerprint(state.records),
     exportedAt: new Date().toISOString(),
   };
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const json = JSON.stringify(data, null, 2);
+  const filename = `limit-diary-${new Date().toISOString().slice(0, 10)}.json`;
+
+  // 手机上走系统分享面板（iPhone 里选"存储到文件"）。
+  // 主屏 App 模式没有返回键，直接触发下载会跳进一个预览页出不来。
+  const isTouch = window.matchMedia && window.matchMedia('(hover: none)').matches;
+  if (isTouch && navigator.canShare) {
+    const file = new File([json], filename, { type: 'application/json' });
+    if (navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: filename })
+        .then(() => showToast('已导出 ✨'))
+        .catch((err) => {
+          // 用户自己在面板里点了取消，不算出错
+          if (err && err.name === 'AbortError') return;
+          showToast('导出失败，再试一次？');
+        });
+      return;
+    }
+  }
+
+  const blob = new Blob([json], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `limit-diary-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
   showToast('已导出 ✨');
@@ -3621,6 +3641,49 @@ function bindEvents() {
       chart.update('none');
     });
   }, { passive: true });
+
+  bindTouchFeedback();
+}
+
+// 触屏专用的"按下反馈"和"禁止缩放"。
+// 手机上 :active 只在手指贴着屏幕那几十毫秒里生效，轻点一下动画还没展开就结束了；
+// 这里改成手指按下时打上 .is-touching，松手后至少再留一小会儿才摘掉，
+// 样式那边拿它当"按住时"的外观，轻点也能看到完整的一下。
+function bindTouchFeedback() {
+  const PRESSABLE = 'button, [role="button"], .picker-trigger, .picker-item';
+  const MIN_HOLD = 140;   // 按下态最少停留的毫秒数
+  let pressed = null;
+  let pressedAt = 0;
+
+  const release = () => {
+    if (!pressed) return;
+    const el = pressed;
+    pressed = null;
+    const wait = Math.max(0, MIN_HOLD - (performance.now() - pressedAt));
+    setTimeout(() => el.classList.remove('is-touching'), wait);
+  };
+
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    const el = e.target.closest && e.target.closest(PRESSABLE);
+    if (!el || el.disabled) return;
+    release();
+    pressed = el;
+    pressedAt = performance.now();
+    el.classList.add('is-touching');
+  }, { passive: true });
+  document.addEventListener('pointerup', release, { passive: true });
+  // 手指按在按钮上开始滑动页面时，浏览器会发 pointercancel，这时直接取消按下态
+  document.addEventListener('pointercancel', () => {
+    if (pressed) pressed.classList.remove('is-touching');
+    pressed = null;
+  }, { passive: true });
+
+  // iOS 从 10 起不认页面头部的"禁止缩放"声明，双指捏合要自己拦下来
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('touchmove', (e) => {
+    if (e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
 }
 
 // 把 body 切到 .is-ready 状态，触发淡入和首屏入场动画。
