@@ -1721,18 +1721,6 @@ body:not(.is-bars-armed) .ring-bar-fill {
   animation: fadeIn 0.25s var(--ease-soft);
 }
 
-/* 锁住背景后，弹层只占 Safari 当前可见区域（包括键盘弹出时）。 */
-.modal-mask,
-.picker-mask {
-  top: var(--modal-top, 0px);
-  bottom: auto;
-  height: 100%;
-  height: var(--modal-height, 100dvh);
-  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
-    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
-  overscroll-behavior: none;
-}
-
 /* 关键修复：确保 [hidden] 属性能正确隐藏弹层
    （没有这条规则的话，上面的 display: flex 会覆盖 [hidden] 自带的 display: none）*/
 .modal-mask[hidden] {
@@ -1756,7 +1744,6 @@ body:not(.is-bars-armed) .ring-bar-fill {
   width: 480px;
   max-width: 90vw;
   max-height: 85vh;
-  max-height: min(85dvh, 100%);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1765,7 +1752,6 @@ body:not(.is-bars-armed) .ring-bar-fill {
 }
 
 .modal-header {
-  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1777,10 +1763,8 @@ body:not(.is-bars-armed) .ring-bar-fill {
 }
 
 .modal-body {
-  min-height: 0;
   padding: 22px 28px 28px;
   overflow-y: auto;
-  overscroll-behavior-y: contain;
   /* Firefox 滚动条：细条 + 半透明暖灰，和笔记列表保持一致 */
   scrollbar-width: thin;
   scrollbar-color: rgba(120, 110, 100, 0.25) transparent;
@@ -1809,10 +1793,8 @@ body:not(.is-bars-armed) .ring-bar-fill {
   max-width: 92vw;
   padding: 32px 32px 26px;
   text-align: center;
-  /* 长文本或键盘占屏时，确认按钮仍可通过弹窗内部滚动到达。 */
-  max-height: 100%;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
+  /* 覆盖 .modal 的 column + max-height，让弹窗高度跟内容走 */
+  max-height: none;
 }
 
 .confirm-icon {
@@ -3382,8 +3364,7 @@ body.is-ready .input-card {
 /* 弹层遮罩 + 卡片 —— 复用 settings 弹窗的开/关动画语言，但更轻 */
 .picker-mask {
   position: fixed;
-  left: 0;
-  right: 0;
+  inset: 0;
   background: var(--modal-mask-bg);
   backdrop-filter: blur(4px);
   z-index: 110;
@@ -3411,7 +3392,6 @@ body.is-ready .input-card {
   width: 360px;
   max-width: 92vw;
   max-height: 70vh;
-  max-height: min(70dvh, 100%);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3427,7 +3407,6 @@ body.is-ready .input-card {
 @media (min-width: 700px) {
   .picker {
     max-height: 84vh;
-    max-height: min(84dvh, 100%);
   }
   .picker-mask[data-picker-kind="week"] .picker {
     width: 460px;
@@ -3482,7 +3461,6 @@ body.is-ready .input-card {
 }
 
 .picker-head {
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3500,9 +3478,7 @@ body.is-ready .input-card {
 }
 
 .picker-list {
-  min-height: 0;
   overflow-y: auto;
-  overscroll-behavior-y: contain;
   /* 顶部不留内边距：否则 sticky 日期头会吸在"距顶 8px"处，上一条窗口从缝里透上来 */
   padding: 0 8px 8px;
   scrollbar-width: thin;
@@ -3926,7 +3902,6 @@ html[data-theme="dark"] .reset-tl-item.is-rule .reset-tl-tag {
   .picker {
     width: 92vw;
     max-height: 75vh;
-    max-height: min(75dvh, 100%);
   }
   .picker-item {
     padding: 10px 10px;
@@ -3936,27 +3911,5 @@ html[data-theme="dark"] .reset-tl-item.is-rule .reset-tl-tag {
   }
   .picker-item-meta {
     font-size: 11.5px;
-  }
-}
-
-@media (hover: none) and (pointer: coarse) {
-  /* 小输入框会触发 iPhone 的聚焦放大；保留用户手动缩放能力。 */
-  .form-field input,
-  .form-row select,
-  .form-row input[type="number"],
-  .hour-stepper input[type="number"] {
-    font-size: 16px;
-  }
-
-  .modal-header .icon-btn,
-  .picker-close {
-    width: 44px;
-    height: 44px;
-    flex-shrink: 0;
-  }
-
-  .hour-stepper-btn {
-    width: 36px;
-    height: 36px;
   }
 }

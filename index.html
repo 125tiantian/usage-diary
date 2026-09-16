@@ -57,7 +57,7 @@
   <!-- Chart.js (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
-  <link rel="stylesheet" href="assets/style.css?v=2.81">
+  <link rel="stylesheet" href="assets/style.css?v=2.80">
 </head>
 <body>
 
@@ -84,7 +84,7 @@
           <span class="sync-dot"></span>
         </button>
         <button class="icon-btn" id="theme-btn">🌙</button>
-        <button class="icon-btn" id="settings-btn" aria-label="设置">⚙️</button>
+        <button class="icon-btn" id="settings-btn">⚙️</button>
       </div>
     </header>
 
@@ -344,10 +344,10 @@
 
   <!-- ========== 设置面板（弹层）========== -->
   <div class="modal-mask" id="settings-modal" hidden>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal">
       <div class="modal-header">
-        <span id="settings-title">⚙️ 设置</span>
-        <button class="icon-btn" id="settings-close" aria-label="关闭设置">✕</button>
+        <span>⚙️ 设置</span>
+        <button class="icon-btn" id="settings-close">✕</button>
       </div>
 
       <div class="modal-body">
@@ -375,7 +375,7 @@
               <div class="more-item-sub">用右上角 🌙/☀️ 切换会关闭自动</div>
             </div>
             <label class="settings-switch">
-              <input type="checkbox" id="theme-system-toggle" aria-label="跟随系统深浅色">
+              <input type="checkbox" id="theme-system-toggle">
               <span class="settings-switch-track"></span>
             </label>
           </div>
@@ -539,7 +539,7 @@
                       <div class="more-item-text">自动同步</div>
                     </div>
                     <label class="settings-switch">
-                      <input type="checkbox" id="sync-auto-toggle" aria-label="自动同步">
+                      <input type="checkbox" id="sync-auto-toggle">
                       <span class="settings-switch-track"></span>
                     </label>
                   </div>
@@ -569,7 +569,7 @@
         <div class="settings-footer">
           额度小日记 · 缓解 Claude 额度焦虑的小手账<br>
           数据存在你的浏览器本地，配了云同步会自动备份到 jsonbin.io
-          <div class="settings-version">v2.81</div>
+          <div class="settings-version">v2.80</div>
         </div>
 
       </div>
@@ -582,7 +582,7 @@
 
   <!-- 历史挑选弹层（5h 窗口 / Weekly 周共用） -->
   <div class="picker-mask" id="picker-mask" hidden>
-    <div class="picker" id="picker-card" role="dialog" aria-modal="true" aria-labelledby="picker-title">
+    <div class="picker" id="picker-card">
       <div class="picker-head">
         <span class="picker-title" id="picker-title">挑一个</span>
         <button class="icon-btn picker-close" id="picker-close" aria-label="关闭">✕</button>
@@ -591,7 +591,7 @@
     </div>
   </div>
 
-  <script src="assets/app.js?v=2.81"></script>
+  <script src="assets/app.js?v=2.80"></script>
 </body>
 </html>
 <!-- Triggered workflow run on  -->
